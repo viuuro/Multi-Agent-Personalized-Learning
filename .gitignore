@@ -1,0 +1,55 @@
+# ==================== 环境变量 / 密钥 ====================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# ==================== Python ====================
+python-ai/__pycache__/
+python-ai/*.pyc
+python-ai/.venv/
+python-ai/venv/
+python-ai/*.egg-info/
+python-ai/dist/
+python-ai/build/
+.mypy_cache/
+__pycache__/
+
+# ==================== Java / Spring Boot ====================
+backend/target/
+backend/*.class
+backend/*.jar
+backend/*.war
+backend/.mvn/wrapper/maven-wrapper.jar
+*.log
+
+# ==================== Node / Vue ====================
+frontend/node_modules/
+frontend/dist/
+frontend/.local/
+*.tsbuildinfo
+
+# ==================== IDE ====================
+.idea/
+*.iml
+*.swp
+*.swo
+.vscode/settings.json
+.settings/
+.classpath
+.project
+.factorypath
+
+# ==================== OS ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+
+# ==================== Maven ====================
+.mvn/wrapper/maven-wrapper.jar
+.maven/
+
+# ==================== Claude Code ====================
+.claude/

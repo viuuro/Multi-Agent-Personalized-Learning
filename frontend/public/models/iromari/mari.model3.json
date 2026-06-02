@@ -1,0 +1,27 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "mari.moc3",
+		"Textures": [
+			"mari.8192/texture_00.png"
+		],
+		"Physics": "mari.physics3.json",
+		"DisplayInfo": "mari.cdi3.json",
+		"Expressions": [
+			{"File": "panic.exp3.json", "Name": "panic"},
+			{"File": "grin.exp3.json", "Name": "grin"}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		}
+	]
+}

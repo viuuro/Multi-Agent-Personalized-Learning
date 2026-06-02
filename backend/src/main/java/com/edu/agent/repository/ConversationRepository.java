@@ -1,0 +1,30 @@
+package com.edu.agent.repository;
+
+import com.edu.agent.model.Conversation;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+/**
+ * 对话记录数据访问层
+ *
+ * 提供对话记录的 CRUD 操作。
+ * 通过 user_id 字段实现多用户数据隔离。
+ */
+@Repository
+public interface ConversationRepository extends JpaRepository<Conversation, Long> {
+
+    /**
+     * 删除指定用户的所有对话记录
+     */
+    void deleteByUserId(Long userId);
+
+    /**
+     * 查询指定用户最近的对话记录（按时间倒序，取前 N 条）
+     */
+    @Query("SELECT c FROM Conversation c WHERE c.userId = :userId ORDER BY c.timestamp DESC")
+    List<Conversation> findRecentByUserId(@Param("userId") Long userId);
+}

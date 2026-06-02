@@ -1,0 +1,31 @@
+# ===========================================================
+# 个性化学习多智能体系统 —— 后端配置文件
+# 【Spring Boot】application.yml 是 Spring Boot 的外部化配置核心
+# Spring Boot 启动时自动读取此文件，并将属性绑定到 @Value 字段
+# ===========================================================
+
+# 【Spring Boot】内嵌 Tomcat 服务器端口配置
+server:
+  port: 8080
+
+# 【Spring Boot】数据源 + JPA 自动配置（spring-boot-starter-data-jpa）
+spring:
+  datasource:                                       # 【Spring Boot】DataSource 自动配置
+    url: jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    username: ${MYSQL_USER:root}         # 【Spring Boot】${...} 环境变量占位符语法
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:                                              # 【Spring Boot】JPA/Hibernate 自动配置
+    hibernate:
+      ddl-auto: update   # 【Spring Boot】ddl-auto=update: Hibernate 自动建表/更新表结构
+    show-sql: false      # 【Spring Boot】开发时可设为 true 在日志中查看 SQL
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect  # 【Spring Boot】MySQL 8.0 方言
+
+# -----------------------------------------------------------
+# Python AI 服务地址
+# -----------------------------------------------------------
+python:
+  ai:
+    url: ${PYTHON_AI_URL:http://localhost:8000}

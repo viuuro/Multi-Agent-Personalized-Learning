@@ -2,6 +2,8 @@ package com.edu.agent.controller;
 
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.ChatMessage;
+import com.edu.agent.model.Conversation;
+import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.service.ChatService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -32,11 +36,13 @@ public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
-    private final ChatService chatService;  // 【Spring Boot】构造器注入的业务服务
+    private final ChatService chatService;
+    private final ConversationRepository conversationRepository;
 
-    /** 【Spring Boot】构造器注入 —— Spring 自动解析并注入 ChatService Bean */
-    public ChatController(ChatService chatService) {
+    /** 【Spring Boot】构造器注入 */
+    public ChatController(ChatService chatService, ConversationRepository conversationRepository) {
         this.chatService = chatService;
+        this.conversationRepository = conversationRepository;
     }
 
     /**
@@ -66,13 +72,25 @@ public class ChatController {
 
     /**
      * GET /api/health —— 健康检查接口
-     * 用于验证服务是否正常运行
      */
-    @GetMapping("/health")  // 【Spring Boot】GET 映射
+    @GetMapping("/health")
     public ApiResponse<Map<String, String>> health() {
         return ApiResponse.success(Map.of(
                 "status", "ok",
                 "service", "edu-agent"
         ));
+    }
+
+    /**
+     * GET /api/conversations —— 获取用户最近的对话历史
+     * 登录后加载历史消息，恢复聊天上下文
+     */
+    @GetMapping("/conversations")
+    public ApiResponse<List<Conversation>> getConversations(@RequestParam Long userId,
+                                                            @RequestParam(defaultValue = "50") int limit) {
+        List<Conversation> messages = conversationRepository.findLatestByUserId(userId, limit);
+        // 数据库按倒序查的，反转为时间正序给前端
+        Collections.reverse(messages);
+        return ApiResponse.success("ok", messages);
     }
 }

@@ -136,7 +136,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { Check, Link, Plus, Delete, ArrowRight } from '@element-plus/icons-vue'
-import { fetchPlan } from '../services/api'
+import { fetchPlan, savePlanApi } from '../services/api'
 import type { LearningPlan } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
@@ -160,6 +160,10 @@ const editablePlan = ref<LearningPlan | null>(null)
 
 const hasPlan = computed(() => plan.value !== null)
 
+function setPlan(newPlan: LearningPlan) {
+  internalPlan.value = JSON.parse(JSON.stringify(newPlan))
+}
+
 onMounted(() => {
   if (props.initialEditing) startEdit()
 })
@@ -182,9 +186,18 @@ function startEdit() {
   editing.value = true
 }
 
-function saveEdit() {
+async function saveEdit() {
   if (editablePlan.value) {
     internalPlan.value = JSON.parse(JSON.stringify(editablePlan.value)) as LearningPlan
+    // 持久化到后端
+    const userId = authStore.user?.id
+    if (userId) {
+      try {
+        await savePlanApi(userId, internalPlan.value)
+      } catch (e) {
+        console.warn('计划保存失败:', e)
+      }
+    }
   }
   editing.value = false
   emit('edit-done')
@@ -217,7 +230,7 @@ function removeResource(wi: number, ri: number) {
   editablePlan.value!.weeks[wi].resources.splice(ri, 1)
 }
 
-defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit })
+defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 </script>
 
 <style scoped>

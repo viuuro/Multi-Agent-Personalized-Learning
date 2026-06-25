@@ -232,7 +232,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
 import { sendMessage } from '../services/sse'
-import { fetchProfile, parseFileApi } from '../services/api'
+import { fetchProfile, parseFileApi, fetchConversationsApi, fetchSavedPlanApi } from '../services/api'
 import RadarChart from '../components/RadarChart.vue'
 import PlanCard from '../components/PlanCard.vue'
 import MessageBubble from '../components/MessageBubble.vue'
@@ -500,7 +500,42 @@ watch(
         } catch {
           // ignore
         }
-        streamGreeting(getGreeting())
+
+        // 加载历史对话
+        try {
+          const history = await fetchConversationsApi(userId!)
+          if (history.length > 0) {
+            chatStore.clearMessages()
+            for (const msg of history) {
+              chatStore.addMessage({
+                id: msg.id.toString(),
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content,
+                timestamp: new Date(msg.timestamp).getTime(),
+              })
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        // 加载已保存的学习计划
+        try {
+          const savedPlan = await fetchSavedPlanApi(userId!)
+          if (savedPlan && savedPlan.weeks && savedPlan.weeks.length > 0) {
+            planHasData.value = true
+            nextTick(() => {
+              planCardRef.value?.setPlan(savedPlan)
+            })
+          }
+        } catch {
+          // ignore
+        }
+
+        // 只有在没有历史对话时才发送欢迎语
+        if (chatStore.messages.length === 0) {
+          streamGreeting(getGreeting())
+        }
       }, 400)
     } else {
       // 退出登录时重置数据

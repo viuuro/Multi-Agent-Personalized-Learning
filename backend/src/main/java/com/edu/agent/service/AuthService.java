@@ -3,6 +3,7 @@ package com.edu.agent.service;
 import com.edu.agent.model.User;
 import com.edu.agent.repository.UserRepository;
 import com.edu.agent.repository.ConversationRepository;
+import com.edu.agent.repository.LearningPlanRepository;
 import com.edu.agent.repository.UserProfileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,14 +43,17 @@ public class AuthService {
     private final UserRepository userRepository;
     private final ConversationRepository conversationRepository;
     private final UserProfileRepository userProfileRepository;
+    private final LearningPlanRepository learningPlanRepository;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
     public AuthService(UserRepository userRepository,
                        ConversationRepository conversationRepository,
-                       UserProfileRepository userProfileRepository) {
+                       UserProfileRepository userProfileRepository,
+                       LearningPlanRepository learningPlanRepository) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.userProfileRepository = userProfileRepository;
+        this.learningPlanRepository = learningPlanRepository;
     }
 
     /**
@@ -222,6 +226,9 @@ public class AuthService {
 
         userProfileRepository.deleteByUserId(userId);
         log.info(">>> 已删除用户 {} 的画像数据", userId);
+
+        learningPlanRepository.deleteByUserId(userId);
+        log.info(">>> 已删除用户 {} 的学习计划", userId);
 
         // 删除用户账户
         userRepository.delete(user);

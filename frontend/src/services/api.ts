@@ -87,6 +87,26 @@ export async function fetchPlan(userId: number): Promise<LearningPlan> {
   return res.data
 }
 
+/**
+ * GET /api/plan —— 获取用户最近一次保存的学习计划
+ */
+export async function fetchSavedPlanApi(userId: number): Promise<LearningPlan | null> {
+  const res = await request<LearningPlan | null>(`/plan?userId=${userId}`)
+  return res.data
+}
+
+/**
+ * PUT /api/plan —— 保存用户编辑后的学习计划
+ */
+export async function savePlanApi(userId: number, plan: LearningPlan): Promise<LearningPlan> {
+  const res = await request<LearningPlan>('/plan', {
+    method: 'PUT',
+    body: JSON.stringify({ userId, plan }),
+  })
+  if (res.code !== 200) throw new Error(res.message)
+  return res.data
+}
+
 export async function loginApi(username: string, password: string): Promise<AuthUser> {
   const res = await request<AuthUser>('/auth/login', {
     method: 'POST',
@@ -146,6 +166,24 @@ export async function updateProfileApi(
   })
   if (res.code !== 200) throw new Error(res.message)
   return res.data
+}
+
+/** 对话记录 */
+export interface ConversationRecord {
+  id: number
+  content: string
+  role: string
+  userId: number
+  conversationId: string
+  timestamp: string
+}
+
+/**
+ * GET /api/conversations —— 获取用户最近的对话历史
+ */
+export async function fetchConversationsApi(userId: number, limit = 50): Promise<ConversationRecord[]> {
+  const res = await request<ConversationRecord[]>(`/conversations?userId=${userId}&limit=${limit}`)
+  return res.data || []
 }
 
 /**

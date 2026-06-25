@@ -27,4 +27,10 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
      */
     @Query("SELECT c FROM Conversation c WHERE c.userId = :userId ORDER BY c.timestamp DESC")
     List<Conversation> findRecentByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询指定用户最近 N 条对话记录（按时间正序，用于前端展示）
+     */
+    @Query(value = "SELECT * FROM conversation WHERE user_id = :userId ORDER BY timestamp DESC LIMIT :limit", nativeQuery = true)
+    List<Conversation> findLatestByUserId(@Param("userId") Long userId, @Param("limit") int limit);
 }

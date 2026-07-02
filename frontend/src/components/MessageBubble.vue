@@ -135,9 +135,9 @@ function escapeHtml(text: string): string {
   opacity: 0.9;
 }
 
-/* 用户消息：渐变 + 微光 */
+/* 用户消息：与 tab-slider-knob 同色 */
 .user .message-content {
-  background: linear-gradient(135deg, #D4916F, #B87858);
+  background: #D4916F;
   color: white;
   box-shadow: 0 4px 18px rgba(212, 145, 111, 0.35);
 }
@@ -147,7 +147,7 @@ function escapeHtml(text: string): string {
   background: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  color: #3D4255;
+  color: #555;
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }

@@ -647,9 +647,7 @@ onUnmounted(() => {
   top: 24px;
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #D4916F 0%, #B87858 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #D4916F;
   background-clip: text;
   white-space: nowrap;
   margin-left: 10px;
@@ -853,6 +851,8 @@ onUnmounted(() => {
 }
 
 .message-list {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   padding: 0px 10px;
@@ -1105,7 +1105,7 @@ onUnmounted(() => {
   margin-right: 1px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #D4916F, #B87858);
+  background: #D4916F;
   color: #fff;
   font-size: 14px;
   cursor: pointer;

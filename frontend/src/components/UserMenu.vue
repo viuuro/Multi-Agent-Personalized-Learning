@@ -20,76 +20,26 @@
           <el-icon :size="16"><SwitchButton /></el-icon>
           <span>退出登录</span>
         </div>
-        <div class="menu-item delete-item" @click="showDeleteDialog = true">
+        <div class="menu-item delete-item" @click="handleDeleteAccount">
           <el-icon :size="16"><Delete /></el-icon>
           <span>注销账号</span>
         </div>
       </div>
     </transition>
-
-    <!-- 注销确认弹窗 -->
-    <el-dialog
-      v-model="showDeleteDialog"
-      :align-center="true"
-      :show-close="true"
-      :close-on-click-modal="true"
-      :close-on-press-escape="false"
-      :lock-scroll="true"
-      width="420px"
-      modal-class="plan-expand-overlay"
-      @closed="deletePassword = ''"
-    >
-      <h2 class="acct-title">注销账号</h2>
-
-      <div class="delete-dialog-content">
-        <p class="delete-warning">⚠️ 此操作不可撤销，将永久删除以下数据：</p>
-        <ul class="delete-list">
-          <li>你的用户账户</li>
-          <li>所有对话记录</li>
-          <li>学习画像数据</li>
-        </ul>
-        <div class="acct-field">
-          <label class="acct-label">请输入密码以确认注销</label>
-          <el-input
-            v-model="deletePassword"
-            type="password"
-            size="large"
-            show-password
-            placeholder="请输入密码"
-            autocomplete="new-password"
-            @keyup.enter="handleDeleteAccount"
-          />
-        </div>
-      </div>
-
-      <p v-if="deleteError" class="error-msg">{{ deleteError }}</p>
-
-      <div class="acct-footer">
-        <el-button size="large" class="cancel-btn" @click="showDeleteDialog = false">取消</el-button>
-        <button class="submit-btn delete-submit-btn" :disabled="deleting" @click="handleDeleteAccount">
-          {{ deleting ? '注销中...' : '确认注销' }}
-        </button>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { User, SwitchButton, Delete } from '@element-plus/icons-vue'
-import { useAuthStore } from '../stores/authStore'
-import { deleteAccountApi } from '../services/api'
 
 const emit = defineEmits<{
   (e: 'account-manage'): void
+  (e: 'delete-account'): void
+  (e: 'logout'): void
 }>()
 
-const authStore = useAuthStore()
 const showMenu = ref(false)
-const showDeleteDialog = ref(false)
-const deletePassword = ref('')
-const deleteError = ref('')
-const deleting = ref(false)
 
 let docCleanup: (() => void) | null = null
 
@@ -110,30 +60,12 @@ function handleAccountManage() {
 
 function handleLogout() {
   showMenu.value = false
-  authStore.logout()
-  window.location.reload()
+  emit('logout')
 }
 
-async function handleDeleteAccount() {
-  if (!deletePassword.value.trim()) {
-    deleteError.value = '请输入密码'
-    return
-  }
-  const userId = authStore.user?.id
-  if (!userId) return
-
-  deleting.value = true
-  deleteError.value = ''
-  try {
-    await deleteAccountApi(userId, deletePassword.value)
-    showDeleteDialog.value = false
-    authStore.logout()
-    window.location.reload()
-  } catch (err: unknown) {
-    deleteError.value = err instanceof Error ? err.message : '注销失败'
-  } finally {
-    deleting.value = false
-  }
+function handleDeleteAccount() {
+  showMenu.value = false
+  emit('delete-account')
 }
 </script>
 
@@ -202,104 +134,15 @@ async function handleDeleteAccount() {
 }
 
 .delete-item:hover {
-  background: rgba(231, 76, 60, 0.1) !important;
+  background: rgba(231, 76, 60, 0.1);
 }
 
-/* 注销弹窗内容 —— 复用 AccountModal 的排版风格 */
-.delete-dialog-content {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+/* 菜单动画 */
+.menu-drop-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
-
-.delete-warning {
-  color: #E74C3C;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.delete-list {
-  margin: 0 0 4px 20px;
-  color: #7A6A60;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-/* 复用 AccountModal 的字段布局 */
-.acct-title {
-  text-align: center;
-  font-size: 20px;
-  font-weight: 700;
-  color: #7A6A60;
-  margin-bottom: 24px;
-}
-
-.acct-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.acct-label {
-  font-size: 13px;
-  color: #A09080;
-}
-
-.error-msg {
-  color: #e57373;
-  font-size: 13px;
-  text-align: center;
-  margin-top: 12px;
-}
-
-.acct-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.cancel-btn {
-  background: #fff !important;
-  border: 1px solid #D8D0C8 !important;
-  color: #8A7565 !important;
-  border-radius: 12px !important;
-  padding: 8px 24px !important;
-  font-size: 14px !important;
-  height: 40px !important;
-}
-
-.submit-btn {
-  padding: 8px 24px;
-  height: 40px;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #D4916F, #B87858);
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.submit-btn:not(:disabled):hover {
-  opacity: 0.85;
-}
-
-/* 注销按钮使用红色渐变 */
-.delete-submit-btn {
-  background: linear-gradient(135deg, #E74C3C, #C0392B);
-}
-
-/* 下拉过渡 */
-.menu-drop-enter-active,
 .menu-drop-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.1s ease, transform 0.1s ease;
 }
 .menu-drop-enter-from,
 .menu-drop-leave-to {

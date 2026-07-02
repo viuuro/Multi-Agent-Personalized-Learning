@@ -606,7 +606,6 @@ onUnmounted(() => {
 
 .panel-card {
   position: relative;
-  z-index: 1;
   background: transparent;
   padding: 12px;
   flex: 1;
@@ -620,13 +619,11 @@ onUnmounted(() => {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(248, 245, 241, 0.45);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: 20px;
   z-index: -1;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 /* ===== 卡片头部 ===== */
@@ -837,7 +834,6 @@ onUnmounted(() => {
 /* 聊天卡片：与左侧 panel-card 统一风格 */
 .chat-card {
   position: relative;
-  z-index: 1;
   background: transparent;
   flex: 1;
   display: flex;
@@ -849,13 +845,11 @@ onUnmounted(() => {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(248, 245, 241, 0.45);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: 20px;
   z-index: -1;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .message-list {

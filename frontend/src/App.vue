@@ -142,11 +142,11 @@ input:-webkit-autofill:active {
   overflow: hidden;
 }
 
-/* ===== 全局光球背景 —— 始终在最底层 ===== */
+/* ===== 全局光球背景 ===== */
 .bg-aurora {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
 }
 

@@ -272,8 +272,11 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .expand-week-card {
-  background: #F4F1EC;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
   overflow: hidden;
 }
 
@@ -325,7 +328,10 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  background: #F4F1EC;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 10px;
   cursor: pointer;
   font-size: 13px;
@@ -397,7 +403,10 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   align-items: center;
   gap: 6px;
   padding: 5px 8px;
-  background: #F4F1EC;
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 10px;
   text-decoration: none;
   font-size: 12px;
@@ -427,6 +436,11 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 <style>
 .week-popover {
   border-radius: 14px !important;
+  background: rgba(248, 245, 241, 0.85) !important;
+  backdrop-filter: blur(20px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
 }
 
 .week-popover .el-popover__title {

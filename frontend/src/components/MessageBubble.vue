@@ -135,17 +135,21 @@ function escapeHtml(text: string): string {
   opacity: 0.9;
 }
 
-/* 用户消息：紫色渐变 */
+/* 用户消息：渐变 + 微光 */
 .user .message-content {
-  background: #D4916F;
+  background: linear-gradient(135deg, #D4916F, #B87858);
   color: white;
+  box-shadow: 0 4px 18px rgba(212, 145, 111, 0.35);
 }
 
-/* AI 消息：白色卡片 */
+/* AI 消息：毛玻璃 */
 .assistant .message-content {
-  background: white;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   color: #3D4255;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }
 
 /* ===== Markdown 内容样式（通过 :deep 穿透 scoped） ===== */

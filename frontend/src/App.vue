@@ -100,15 +100,19 @@ input:-webkit-autofill:active {
   background: transparent;
 }
 
-/* ===== 顶部标题栏 ===== */
+/* ===== 顶部标题栏 —— 毛玻璃 ===== */
 .app-header {
-  background: linear-gradient(#D4916F);
+  background: linear-gradient(135deg, rgba(212, 145, 111, 0.85), rgba(184, 120, 88, 0.85));
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
   color: white;
   padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
 }
 
 .header-left {
@@ -165,14 +169,52 @@ input:-webkit-autofill:active {
     rgba(245, 235, 220, 0.12) 70%,
     transparent 90%
   );
+  animation: orb-drift-1 20s ease-in-out infinite alternate;
 }
 
+@keyframes orb-drift-1 {
+  0%   { transform: translate(50%, 50%) scale(1); }
+  100% { transform: translate(45%, 55%) scale(1.03); }
+}
+
+/* 冷色调光晕（蓝紫）—— 为毛玻璃提供色彩折射 */
 .orb-2 {
-  display: none;
+  left: -10%;
+  top: -15%;
+  width: 1600px;
+  height: 1600px;
+  background: radial-gradient(circle at 60% 60%,
+    rgba(180, 200, 255, 0.25) 0%,
+    rgba(160, 180, 240, 0.15) 30%,
+    rgba(140, 160, 220, 0.08) 60%,
+    transparent 85%
+  );
+  animation: orb-drift-2 25s ease-in-out infinite alternate;
 }
 
+/* 暖粉色调光晕 —— 增加层次 */
 .orb-3 {
-  display: none;
+  left: 30%;
+  bottom: -20%;
+  width: 1400px;
+  height: 1400px;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(255, 200, 180, 0.2) 0%,
+    rgba(240, 180, 160, 0.12) 30%,
+    rgba(220, 160, 140, 0.06) 60%,
+    transparent 85%
+  );
+  animation: orb-drift-3 30s ease-in-out infinite alternate;
+}
+
+@keyframes orb-drift-2 {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 40px) scale(1.05); }
+}
+
+@keyframes orb-drift-3 {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-40px, -30px) scale(1.08); }
 }
 
 </style>

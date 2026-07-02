@@ -606,6 +606,7 @@ onUnmounted(() => {
 
 .panel-card {
   position: relative;
+  z-index: 1;
   background: transparent;
   padding: 12px;
   flex: 1;
@@ -836,6 +837,7 @@ onUnmounted(() => {
 /* 聊天卡片：与左侧 panel-card 统一风格 */
 .chat-card {
   position: relative;
+  z-index: 1;
   background: transparent;
   flex: 1;
   display: flex;

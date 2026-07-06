@@ -255,21 +255,17 @@ input:-webkit-autofill:active {
   background: transparent;
 }
 
-/* ===== 顶部标题栏 —— 毛玻璃 ===== */
+/* ===== 顶部标题栏 ===== */
 .app-header {
   position: relative;
   z-index: 100;
-  background: var(--accent);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  color: white;
+  background: transparent;
   padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--border-solid);
 }
 
 .header-left {
@@ -286,11 +282,12 @@ input:-webkit-autofill:active {
 .app-header h1 {
   font-size: 20px;
   font-weight: 600;
+  color: var(--accent);
 }
 
 .header-subtitle {
   font-size: 13px;
-  opacity: 0.8;
+  color: var(--text-faint);
 }
 
 /* 主区域填满剩余高度 */

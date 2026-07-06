@@ -647,7 +647,7 @@ onUnmounted(() => {
   top: 24px;
   font-size: 20px;
   font-weight: 700;
-  color: #D4916F;
+  color: var(--accent);
   background-clip: text;
   white-space: nowrap;
   margin-left: 10px;
@@ -655,13 +655,31 @@ onUnmounted(() => {
 
 /* 编辑按钮水平位置 —— 调整 margin-left */
 .edit-btn {
-  color: #D4916F;
+  color: var(--accent);
   margin-left: 0;
+  border: 1px solid transparent !important;
+  transition: border-color 0.2s;
+}
+.edit-btn:hover,
+.edit-btn:focus,
+.edit-btn:active {
+  border-color: var(--border-solid) !important;
+  background: transparent !important;
+  color: var(--accent) !important;
 }
 
 /* 展开按钮（与编辑按钮统一样式） */
 .expand-btn {
-  color: #D4916F;
+  color: var(--accent);
+  border: 1px solid transparent !important;
+  transition: border-color 0.2s;
+}
+.expand-btn:hover,
+.expand-btn:focus,
+.expand-btn:active {
+  border-color: var(--border-solid) !important;
+  background: transparent !important;
+  color: var(--accent) !important;
 }
 
 .card-tabs {
@@ -694,7 +712,7 @@ onUnmounted(() => {
   left: 0;
   width: 50%;
   height: 100%;
-  background: #D4916F;
+  background: var(--accent);
   border-radius: 9px;
   transition: transform 0.25s ease;
 }
@@ -785,7 +803,7 @@ onUnmounted(() => {
 }
 
 .summary-row .value.goal {
-  color: #D4916F;
+  color: var(--accent);
   font-weight: 500;
 }
 
@@ -813,7 +831,7 @@ onUnmounted(() => {
 }
 
 .plan-empty-state .el-button--primary {
-  background: #D4916F;
+  background: var(--accent);
   border: none;
   border-radius: 12px;
 }
@@ -930,7 +948,8 @@ onUnmounted(() => {
 }
 
 .plus-btn:hover {
-  background: #f0f0f0;
+  background: transparent;
+  border: 1px solid var(--border-solid);
 }
 
 /* + 按钮下拉菜单（与汉堡菜单样式一致） */
@@ -1044,6 +1063,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-card);
   overflow: hidden;
   z-index: 1100;
+  border: 1px solid var(--border-solid);
 }
 
 .plus-menu-item {
@@ -1058,7 +1078,7 @@ onUnmounted(() => {
 }
 
 .plus-menu-item:hover {
-  background: rgba(212, 145, 111, 0.1);
+  background: var(--accent-hover);
 }
 
 /* 下拉菜单动画 */
@@ -1105,12 +1125,12 @@ onUnmounted(() => {
   margin-right: 1px;
   border: none;
   border-radius: 12px;
-  background: #D4916F;
+  background: var(--accent);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
   transition: opacity 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 18px rgba(212, 145, 111, 0.4);
+  box-shadow: 0 4px 18px var(--accent-glow);
 }
 
 .capsule-send:disabled {
@@ -1161,6 +1181,30 @@ onUnmounted(() => {
 /* 所有输入框统一圆角（与聊天输入框一致） */
 .el-input__wrapper {
   border-radius: 14px !important;
+  background-color: var(--bg-input) !important;
+  box-shadow: 0 0 0 1px var(--border-solid) inset !important;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--accent) inset !important;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--accent) inset !important;
+}
+
+.el-input__inner {
+  color: var(--text-primary) !important;
+}
+
+.el-input__inner::placeholder {
+  color: var(--text-placeholder) !important;
+}
+
+/* 密码输入框的眼睛图标颜色 */
+.el-input__suffix .el-icon {
+  color: var(--text-faint) !important;
 }
 
 /* 模态框内部：与登录/账号管理模态框统一样式 */
@@ -1196,12 +1240,12 @@ onUnmounted(() => {
 }
 
 .save-btn.el-button--primary {
-  background: #D4916F !important;
-  border-color: #D4916F !important;
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
 }
 .save-btn.el-button--primary:hover {
-  background: #B87858 !important;
-  border-color: #B87858 !important;
+  background: var(--accent-dark) !important;
+  border-color: var(--accent-dark) !important;
 }
 
 .edit-modal-footer .el-button {
@@ -1210,5 +1254,13 @@ onUnmounted(() => {
 
 .edit-modal-footer .el-button:last-child {
   margin-right: 4px;
+  background: var(--bg-input) !important;
+  border-color: var(--border-solid) !important;
+  color: var(--text-muted) !important;
+}
+.edit-modal-footer .el-button:last-child:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: transparent !important;
 }
 </style>

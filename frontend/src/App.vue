@@ -164,7 +164,7 @@ function onLoggedIn(user: AuthUser) {
   --bg-secondary: rgba(248, 245, 241, 0.45);
   --bg-card: rgba(255, 255, 255, 0.55);
   --bg-input: rgba(255, 255, 255, 0.55);
-  --bg-hover: rgba(212, 145, 111, 0.1);
+  --bg-hover: var(--accent-hover);
   --bg-plan: rgba(255, 255, 255, 0.4);
   --text-primary: #3D4255;
   --text-secondary: #7A6A60;
@@ -182,32 +182,42 @@ function onLoggedIn(user: AuthUser) {
   --scrollbar-thumb: #D5CFC8;
   --danger: #E74C3C;
   --success: #67c23a;
+  --accent: #D4916F;
+  --accent-dark: #B87858;
+  --accent-glow: rgba(212, 145, 111, 0.35);
+  --accent-hover: rgba(212, 145, 111, 0.1);
+  --live2d-text: rgba(212, 145, 111, 0.06);
 }
 
-/* ===== 深色主题变量 ===== */
+/* ===== 深色主题变量（灰底微暖调） ===== */
 [data-theme="dark"] {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: rgba(30, 30, 50, 0.6);
-  --bg-card: rgba(40, 40, 65, 0.5);
-  --bg-input: rgba(40, 40, 65, 0.6);
-  --bg-hover: rgba(212, 145, 111, 0.15);
-  --bg-plan: rgba(40, 40, 65, 0.4);
-  --text-primary: #e0ddd8;
-  --text-secondary: #b8b0a5;
-  --text-muted: #9a9088;
-  --text-faint: #7a7068;
-  --text-placeholder: #5a5048;
+  --bg-primary: #352e28;
+  --bg-secondary: rgba(53, 46, 40, 0.6);
+  --bg-card: rgba(65, 55, 48, 0.5);
+  --bg-input: rgba(65, 55, 48, 0.6);
+  --bg-hover: var(--accent-hover);
+  --bg-plan: rgba(65, 55, 48, 0.4);
+  --text-primary: #ece6e0;
+  --text-secondary: #b8aea5;
+  --text-muted: #988e85;
+  --text-faint: #78706a;
+  --text-placeholder: #5a5450;
   --border-light: rgba(255, 255, 255, 0.08);
-  --border-solid: rgba(255, 255, 255, 0.1);
+  --border-solid: rgba(255, 255, 255, 0.12);
   --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
   --shadow-bubble: 0 4px 20px rgba(0, 0, 0, 0.3);
-  --ai-bubble-bg: rgba(50, 50, 75, 0.6);
+  --ai-bubble-bg: rgba(58, 52, 48, 0.6);
   --ai-bubble-border: rgba(255, 255, 255, 0.08);
-  --code-bg: #1e1e2e;
-  --code-text: #cdd6f4;
-  --scrollbar-thumb: #4a4a5a;
+  --code-bg: #201c1a;
+  --code-text: #d0c8c0;
+  --scrollbar-thumb: #4a4440;
   --danger: #ff6b6b;
   --success: #67c23a;
+  --accent: #d4916f;
+  --accent-dark: #b87858;
+  --accent-glow: rgba(212, 145, 111, 0.3);
+  --accent-hover: rgba(212, 145, 111, 0.12);
+  --live2d-text: rgba(212, 145, 111, 0.025);
 }
 
 /* ===== 全局样式重置 ===== */
@@ -249,7 +259,7 @@ input:-webkit-autofill:active {
 .app-header {
   position: relative;
   z-index: 100;
-  background: rgba(212, 145, 111, 0.85);
+  background: var(--accent);
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
   color: white;
@@ -359,7 +369,7 @@ input:-webkit-autofill:active {
   height: 40px;
   border: none;
   border-radius: 12px;
-  background: #D4916F;
+  background: var(--accent);
   color: #fff;
   font-size: 14px;
   cursor: pointer;

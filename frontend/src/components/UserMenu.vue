@@ -116,14 +116,14 @@ function handleDeleteAccount() {
   top: calc(100% + 4px);
   right: 0;
   min-width: 160px;
-  background: var(--bg-card);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 14px;
   box-shadow: var(--shadow-card);
   overflow: hidden;
   z-index: 1100;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-solid);
 }
 
 .menu-item {
@@ -141,17 +141,11 @@ function handleDeleteAccount() {
   background: var(--bg-hover);
 }
 
-.theme-item {
-  border-bottom: 1px solid var(--border-light);
-}
-
 .logout-item {
-  border-top: 1px solid var(--border-light);
-  color: #B87858;
+  color: var(--accent-dark);
 }
 
 .delete-item {
-  border-top: 1px solid var(--border-light);
   color: var(--danger);
 }
 

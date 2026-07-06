@@ -19,7 +19,9 @@
           <el-avatar :size="56" :src="avatarPreview || undefined" :style="{ background: '#D4916F' }">
             {{ authStore.user?.username?.charAt(0)?.toUpperCase() || 'U' }}
           </el-avatar>
-          <el-button size="small" @click="triggerFileInput">选择图片</el-button>
+          <el-button class="choose-avatar-btn" size="small" text @click="triggerFileInput">
+            <el-icon style="margin-right:4px"><RefreshRight /></el-icon>更换
+          </el-button>
           <input
             ref="fileInputRef"
             type="file"
@@ -63,6 +65,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { RefreshRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/authStore'
 import { updateProfileApi } from '../services/api'
 
@@ -182,6 +185,19 @@ function handleClose() {
   border-radius: 8px;
 }
 
+.choose-avatar-btn {
+  color: var(--accent) !important;
+  border: 1px solid transparent !important;
+  transition: border-color 0.2s;
+}
+.choose-avatar-btn:hover,
+.choose-avatar-btn:focus,
+.choose-avatar-btn:active {
+  border-color: var(--border-solid) !important;
+  background: transparent !important;
+  color: var(--accent) !important;
+}
+
 .acct-field {
   display: flex;
   flex-direction: column;
@@ -225,7 +241,7 @@ function handleClose() {
   height: 40px;
   border: none;
   border-radius: 12px;
-  background: #D4916F;
+  background: var(--accent);
   color: #fff;
   font-size: 14px;
   cursor: pointer;

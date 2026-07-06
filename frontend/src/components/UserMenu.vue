@@ -3,9 +3,9 @@
     <!-- 菜单按钮 -->
     <button class="hamburger-btn" @click.stop="showMenu = !showMenu">
       <svg width="20" height="16" viewBox="0 0 20 16" fill="none">
-        <rect x="0" y="0" width="20" height="2" rx="1" fill="white"/>
-        <rect x="0" y="7" width="20" height="2" rx="1" fill="white"/>
-        <rect x="0" y="14" width="20" height="2" rx="1" fill="white"/>
+        <rect x="0" y="0" width="20" height="2" rx="1" fill="currentColor"/>
+        <rect x="0" y="7" width="20" height="2" rx="1" fill="currentColor"/>
+        <rect x="0" y="14" width="20" height="2" rx="1" fill="currentColor"/>
       </svg>
     </button>
 
@@ -104,6 +104,7 @@ function handleDeleteAccount() {
   cursor: pointer;
   padding: 6px;
   border-radius: 8px;
+  color: var(--accent);
   transition: background 0.2s;
 }
 

@@ -647,8 +647,7 @@ onUnmounted(() => {
   top: 24px;
   font-size: 20px;
   font-weight: 700;
-  color: var(--accent);
-  background-clip: text;
+  color: var(--text-secondary);
   white-space: nowrap;
   margin-left: 10px;
 }

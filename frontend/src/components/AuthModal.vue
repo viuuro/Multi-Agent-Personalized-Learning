@@ -191,7 +191,7 @@ async function handleRegister() {
   height: 40px;
   border: none;
   border-radius: 12px;
-  background: #D4916F;
+  background: var(--accent);
   color: #fff;
   font-size: 14px;
   cursor: pointer;

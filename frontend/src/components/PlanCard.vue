@@ -275,9 +275,8 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   background: var(--ai-bubble-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--ai-bubble-border);
   border-radius: 12px;
-  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border-solid);
 }
 
 .expand-week-title {
@@ -331,7 +330,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   background: var(--ai-bubble-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--ai-bubble-border);
+  border: 1px solid var(--border-solid);
   border-radius: 10px;
   cursor: pointer;
   font-size: 13px;
@@ -410,7 +409,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   border-radius: 10px;
   text-decoration: none;
   font-size: 12px;
-  color: #D4916F;
+  color: var(--accent);
   transition: background 0.2s;
 }
 
@@ -439,8 +438,25 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   background: var(--bg-primary) !important;
   backdrop-filter: blur(20px) saturate(1.3) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.3) !important;
-  border: 1px solid var(--ai-bubble-border) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid var(--border-solid) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* 资源平台标签：透明背景+轮廓 */
+.resource-link .el-tag {
+  background: transparent !important;
+  border: 1px solid var(--border-solid) !important;
+  color: var(--text-secondary) !important;
+}
+
+.resource-link .el-tag--danger {
+  border-color: #e88ca5 !important;
+  color: #e88ca5 !important;
+}
+
+.resource-link .el-tag--primary {
+  border-color: #7ab8d8 !important;
+  color: #7ab8d8 !important;
 }
 
 .week-popover .el-popover__title {

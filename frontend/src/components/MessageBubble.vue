@@ -137,9 +137,9 @@ function escapeHtml(text: string): string {
 
 /* 用户消息：与 tab-slider-knob 同色 */
 .user .message-content {
-  background: #D4916F;
+  background: var(--accent);
   color: white;
-  box-shadow: 0 4px 18px rgba(212, 145, 111, 0.35);
+  box-shadow: 0 4px 18px var(--accent-glow);
 }
 
 /* AI 消息：毛玻璃 */
@@ -148,7 +148,7 @@ function escapeHtml(text: string): string {
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   color: var(--text-primary);
-  border: 1px solid var(--ai-bubble-border);
+  border: 1px solid var(--border-solid);
   box-shadow: 0 4px 20px var(--shadow-bubble);
 }
 
@@ -196,7 +196,7 @@ function escapeHtml(text: string): string {
 }
 
 .message-content :deep(a) {
-  color: #D4916F;
+  color: var(--accent);
   text-decoration: none;
 }
 .user .message-content :deep(a) {

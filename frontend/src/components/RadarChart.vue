@@ -9,9 +9,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import { useProfileStore } from '../stores/profileStore'
+import { useThemeStore } from '../stores/themeStore'
 
 /**
  * 6 维画像雷达图组件
@@ -31,12 +32,29 @@ function initChart() {
   updateChart()
 }
 
+/** 获取当前主题的强调色 */
+function getAccentColors() {
+  const style = getComputedStyle(document.documentElement)
+  const accent = style.getPropertyValue('--accent').trim() || '#D4916F'
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+  const borderColor = style.getPropertyValue('--border-solid').trim() || '#E0DCD6'
+  return {
+    accent,
+    accentGlow: style.getPropertyValue('--accent-glow').trim() || 'rgba(212, 145, 111, 0.35)',
+    splitLight: isDark ? 'rgba(212, 145, 111, 0.03)' : 'rgba(212, 145, 111, 0.05)',
+    splitDark: isDark ? 'rgba(212, 145, 111, 0.06)' : 'rgba(212, 145, 111, 0.1)',
+    textSecondary: style.getPropertyValue('--text-secondary').trim() || '#7A6A60',
+    line: borderColor,
+  }
+}
+
 /** 更新雷达图数据 */
 function updateChart() {
   if (!chartInstance) return
 
   const p = profileStore.profile
   const hasData = p.knowledgeBase > 0 || p.learningPace > 0
+  const colors = getAccentColors()
 
   // 6 个维度的指标定义（简化标签，避免换行遮挡）
   const indicator = [
@@ -66,14 +84,24 @@ function updateChart() {
       radius: '55%',
       indicator,
       axisName: {
-        color: '#7A6A60',
+        color: colors.textSecondary,
         fontSize: 11,
         borderRadius: 3,
         padding: [3, 5],
       },
       splitArea: {
         areaStyle: {
-          color: ['rgba(212, 145, 111, 0.05)', 'rgba(212, 145, 111, 0.1)'],
+          color: [colors.splitLight, colors.splitDark],
+        },
+      },
+      splitLine: {
+        lineStyle: {
+          color: colors.line,
+        },
+      },
+      axisLine: {
+        lineStyle: {
+          color: colors.line,
         },
       },
     },
@@ -93,14 +121,14 @@ function updateChart() {
             ],
             name: '当前画像',
             areaStyle: {
-              color: 'rgba(212, 145, 111, 0.35)',
+              color: colors.accentGlow,
             },
             lineStyle: {
-              color: '#D4916F',
+              color: colors.accent,
               width: 2,
             },
             itemStyle: {
-              color: '#D4916F',
+              color: colors.accent,
             },
           },
         ],
@@ -129,6 +157,10 @@ function handleResize() {
 
 // 监听画像数据变化，自动更新雷达图
 watch(() => profileStore.profile, updateChart, { deep: true })
+
+// 监听主题变化，更新雷达图颜色
+const themeStore = useThemeStore()
+watch(() => themeStore.isDark, updateChart)
 </script>
 
 <style scoped>

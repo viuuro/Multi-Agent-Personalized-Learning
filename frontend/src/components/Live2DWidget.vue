@@ -226,7 +226,7 @@ onUnmounted(() => {
 .bg-line {
   font-size: 154px;
   font-weight: 800;
-  color: rgba(212, 145, 111, 0.11);
+  color: var(--live2d-text);
   line-height: 0.85;
   letter-spacing: 0.15em;
   user-select: none;
@@ -242,7 +242,7 @@ onUnmounted(() => {
   width: 98%;
   height: 128px;
   margin-top: 24px;
-  background: rgba(212, 145, 111, 0.11);
+  background: var(--live2d-text);
   border-radius: 0;
   position: relative;
   /* 独立微调矩形位置：translateX=左右，translateY=上下（正=下移，负=上移） */
@@ -253,5 +253,12 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+}
+</style>
+
+<style>
+/* 深色模式降低 Live2D 亮度 */
+[data-theme="dark"] .live2d-stage canvas {
+  filter: brightness(0.85);
 }
 </style>

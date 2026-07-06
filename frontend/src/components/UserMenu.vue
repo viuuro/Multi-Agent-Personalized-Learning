@@ -15,8 +15,8 @@
         <!-- 主题切换 -->
         <div class="menu-item theme-item" @click="themeStore.toggleMode">
           <el-icon :size="16">
-            <Moon v-if="themeStore.mode === 'light'" />
-            <Sunny v-else-if="themeStore.mode === 'dark'" />
+            <Sunny v-if="themeStore.mode === 'light'" />
+            <Moon v-else-if="themeStore.mode === 'dark'" />
             <Monitor v-else />
           </el-icon>
           <span>{{ themeModeLabel }}</span>
@@ -52,7 +52,7 @@ const emit = defineEmits<{
 const themeStore = useThemeStore()
 
 const themeModeLabel = computed(() => {
-  const labels = { auto: '跟随系统', light: '深色模式', dark: '浅色模式' }
+  const labels = { auto: '跟随系统', light: '浅色模式', dark: '深色模式' }
   return labels[themeStore.mode]
 })
 

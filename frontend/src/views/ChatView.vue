@@ -919,7 +919,7 @@ onUnmounted(() => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: #fff;
+  background: transparent;
   color: #3D4255;
   display: flex;
   align-items: center;

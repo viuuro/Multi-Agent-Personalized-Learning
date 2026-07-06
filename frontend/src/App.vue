@@ -3,8 +3,7 @@
     <!-- 顶部导航栏：系统名称 + 副标题 + 汉堡菜单 -->
     <header class="app-header">
       <div class="header-left">
-        <h1>个性化学习多智能体系统</h1>
-        <span class="header-subtitle">Multi-Agent Personalized Learning</span>
+        <h1>Multi-Agent Personalized Learning</h1>
       </div>
       <div class="header-right">
         <UserMenu
@@ -265,7 +264,6 @@ input:-webkit-autofill:active {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-solid);
 }
 
 .header-left {
@@ -280,7 +278,7 @@ input:-webkit-autofill:active {
 }
 
 .app-header h1 {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--accent);
 }

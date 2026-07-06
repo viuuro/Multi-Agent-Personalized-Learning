@@ -600,7 +600,7 @@ onUnmounted(() => {
   width: 4px;
 }
 .left-panel::-webkit-scrollbar-thumb {
-  background: #D5CFC8;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 
@@ -671,8 +671,8 @@ onUnmounted(() => {
 .tab-slider {
   display: flex;
   position: relative;
-  background: white;
-  border: 1px solid #D8D0C8;
+  background: var(--bg-input);
+  border: 1px solid var(--border-solid);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -682,7 +682,7 @@ onUnmounted(() => {
   z-index: 1;
   padding: 4px 14px;
   font-size: 12px;
-  color: #8A7565;
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 0.25s;
   user-select: none;
@@ -704,7 +704,7 @@ onUnmounted(() => {
 }
 
 .tab-slider.right .tab-option:first-child {
-  color: #8A7565;
+  color: var(--text-muted);
 }
 
 .tab-option:first-child {
@@ -737,7 +737,7 @@ onUnmounted(() => {
   width: 3px;
 }
 .tab-content::-webkit-scrollbar-thumb {
-  background: #D5CFC8;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 
@@ -771,13 +771,13 @@ onUnmounted(() => {
 }
 
 .summary-row .label {
-  color: #A09080;
+  color: var(--text-faint);
   width: 32px;
   flex-shrink: 0;
 }
 
 .summary-row .value {
-  color: #8A7565;
+  color: var(--text-muted);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -801,14 +801,14 @@ onUnmounted(() => {
 
 .plan-empty-state p {
   font-size: 13px;
-  color: #B8AFA5;
+  color: var(--text-placeholder);
 }
 
 .plan-loading-text {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #A09080;
+  color: var(--text-faint);
   font-size: 13px;
 }
 
@@ -866,7 +866,7 @@ onUnmounted(() => {
   border-radius: 3px;
 }
 .message-list.scrolling::-webkit-scrollbar-thumb {
-  background: #C8BFB5;
+  background: var(--scrollbar-thumb);
 }
 
 /* Loading 动画 */
@@ -878,7 +878,7 @@ onUnmounted(() => {
 .dot {
   width: 6px;
   height: 6px;
-  background: #B8AFA5;
+  background: var(--text-placeholder);
   border-radius: 50%;
   animation: bounce 1.2s infinite;
 }
@@ -903,13 +903,13 @@ onUnmounted(() => {
 .capsule-bar {
   display: flex;
   align-items: flex-end;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--bg-input);
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--border-solid);
   border-radius: 16px;
   padding: 4px 4px 4px 4px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-card);
 }
 
 /* + 按钮（圆形，黑白风格） */
@@ -920,7 +920,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: #3D4255;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -948,8 +948,8 @@ onUnmounted(() => {
   height: 72px;
   border-radius: 12px;
   overflow: hidden;
-  border: 2px solid #E0DCD6;
-  background: #fff;
+  border: 2px solid var(--border-solid);
+  background: var(--bg-card);
 }
 
 .staged-preview-item img {
@@ -988,8 +988,8 @@ onUnmounted(() => {
   gap: 8px;
   padding: 8px 32px 8px 10px;
   border-radius: 12px;
-  border: 2px solid #E0DCD6;
-  background: #fff;
+  border: 2px solid var(--border-solid);
+  background: var(--bg-card);
   max-width: 240px;
 }
 
@@ -1005,7 +1005,7 @@ onUnmounted(() => {
 
 .file-name {
   font-size: 13px;
-  color: #3D4255;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1013,7 +1013,7 @@ onUnmounted(() => {
 
 .file-size {
   font-size: 11px;
-  color: #A09080;
+  color: var(--text-faint);
 }
 
 .staged-file-item .staged-remove {
@@ -1037,11 +1037,11 @@ onUnmounted(() => {
   bottom: calc(100% + 8px);
   left: 16px;
   min-width: 140px;
-  background: rgba(248, 245, 241, 0.95);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   z-index: 1100;
 }
@@ -1052,7 +1052,7 @@ onUnmounted(() => {
   gap: 10px;
   padding: 12px 16px;
   font-size: 13px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -1078,7 +1078,7 @@ onUnmounted(() => {
   outline: none;
   background: transparent;
   font-size: 14px;
-  color: #3D4255;
+  color: var(--text-primary);
   padding: 8px 0;
   resize: none;
   overflow-y: auto;
@@ -1091,12 +1091,12 @@ onUnmounted(() => {
   width: 3px;
 }
 .capsule-input::-webkit-scrollbar-thumb {
-  background: #D5CFC8;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 
 .capsule-input::placeholder {
-  color: #B8AFA5;
+  color: var(--text-placeholder);
 }
 
 .capsule-send {
@@ -1132,7 +1132,7 @@ onUnmounted(() => {
   width: 4px;
 }
 .expand-plan-content::-webkit-scrollbar-thumb {
-  background: #D5CFC8;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 
@@ -1145,7 +1145,7 @@ onUnmounted(() => {
     width: 100%;
     min-width: 0;
     flex-shrink: 0;
-    border-bottom: 1px solid #E0DCD6;
+    border-bottom: 1px solid var(--border-solid);
   }
 }
 </style>
@@ -1165,7 +1165,7 @@ onUnmounted(() => {
 
 /* 模态框内部：与登录/账号管理模态框统一样式 */
 .el-dialog {
-  background: rgba(248, 245, 241, 0.90) !important;
+  background: var(--bg-primary) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
   border-radius: 20px !important;
@@ -1176,15 +1176,15 @@ onUnmounted(() => {
   background: transparent !important;
 }
 .el-dialog__title {
-  color: #7A6A60 !important;
+  color: var(--text-secondary) !important;
   padding-left: 6px;
 }
 
 .el-dialog__headerbtn .el-icon {
-  color: #8A7565 !important;
+  color: var(--text-muted) !important;
 }
 .el-dialog__headerbtn:hover .el-icon {
-  color: #8A7565 !important;
+  color: var(--text-muted) !important;
   background: transparent !important;
 }
 

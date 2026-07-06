@@ -151,7 +151,7 @@ function handleClose() {
   text-align: center;
   font-size: 20px;
   font-weight: 700;
-  color: #7A6A60;
+  color: var(--text-secondary);
   margin-bottom: 24px;
 }
 
@@ -169,7 +169,7 @@ function handleClose() {
 
 .acct-label {
   font-size: 13px;
-  color: #A09080;
+  color: var(--text-faint);
 }
 
 .avatar-row {
@@ -211,9 +211,9 @@ function handleClose() {
 }
 
 .cancel-btn {
-  background: #fff !important;
-  border: 1px solid #D8D0C8 !important;
-  color: #8A7565 !important;
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-solid) !important;
+  color: var(--text-muted) !important;
   border-radius: 12px !important;
   padding: 8px 24px !important;
   font-size: 14px !important;

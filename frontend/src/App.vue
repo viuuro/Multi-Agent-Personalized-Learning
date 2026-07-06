@@ -158,6 +158,58 @@ function onLoggedIn(user: AuthUser) {
 </script>
 
 <style>
+/* ===== 浅色主题变量 ===== */
+:root {
+  --bg-primary: #F8F5F1;
+  --bg-secondary: rgba(248, 245, 241, 0.45);
+  --bg-card: rgba(255, 255, 255, 0.55);
+  --bg-input: rgba(255, 255, 255, 0.55);
+  --bg-hover: rgba(212, 145, 111, 0.1);
+  --bg-plan: rgba(255, 255, 255, 0.4);
+  --text-primary: #3D4255;
+  --text-secondary: #7A6A60;
+  --text-muted: #8A7565;
+  --text-faint: #A09080;
+  --text-placeholder: #B8AFA5;
+  --border-light: rgba(255, 255, 255, 0.35);
+  --border-solid: #E0DCD6;
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.06);
+  --shadow-bubble: 0 4px 20px rgba(0, 0, 0, 0.06);
+  --ai-bubble-bg: rgba(255, 255, 255, 0.55);
+  --ai-bubble-border: rgba(255, 255, 255, 0.4);
+  --code-bg: #282c34;
+  --code-text: #abb2bf;
+  --scrollbar-thumb: #D5CFC8;
+  --danger: #E74C3C;
+  --success: #67c23a;
+}
+
+/* ===== 深色主题变量 ===== */
+[data-theme="dark"] {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: rgba(30, 30, 50, 0.6);
+  --bg-card: rgba(40, 40, 65, 0.5);
+  --bg-input: rgba(40, 40, 65, 0.6);
+  --bg-hover: rgba(212, 145, 111, 0.15);
+  --bg-plan: rgba(40, 40, 65, 0.4);
+  --text-primary: #e0ddd8;
+  --text-secondary: #b8b0a5;
+  --text-muted: #9a9088;
+  --text-faint: #7a7068;
+  --text-placeholder: #5a5048;
+  --border-light: rgba(255, 255, 255, 0.08);
+  --border-solid: rgba(255, 255, 255, 0.1);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --shadow-bubble: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --ai-bubble-bg: rgba(50, 50, 75, 0.6);
+  --ai-bubble-border: rgba(255, 255, 255, 0.08);
+  --code-bg: #1e1e2e;
+  --code-text: #cdd6f4;
+  --scrollbar-thumb: #4a4a5a;
+  --danger: #ff6b6b;
+  --success: #67c23a;
+}
+
 /* ===== 全局样式重置 ===== */
 * {
   margin: 0;
@@ -168,8 +220,9 @@ function onLoggedIn(user: AuthUser) {
 body {
   font-family: 'Mi Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
-  background: #F8F5F1;
-  color: #3D4255;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 /* 移除 Chrome 自动填充的蓝色底纹 */
@@ -177,9 +230,9 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px white inset !important;
-  box-shadow: 0 0 0 30px white inset !important;
-  -webkit-text-fill-color: #3D4255 !important;
+  -webkit-box-shadow: 0 0 0 30px var(--bg-primary) inset !important;
+  box-shadow: 0 0 0 30px var(--bg-primary) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -242,7 +295,7 @@ input:-webkit-autofill:active {
   text-align: center;
   font-size: 20px;
   font-weight: 700;
-  color: #7A6A60;
+  color: var(--text-secondary);
   margin-bottom: 24px;
 }
 
@@ -253,14 +306,14 @@ input:-webkit-autofill:active {
 }
 
 .delete-warning {
-  color: #E74C3C;
+  color: var(--danger);
   font-weight: 600;
   font-size: 14px;
 }
 
 .delete-list {
   margin: 0 0 4px 20px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.8;
 }
@@ -273,11 +326,11 @@ input:-webkit-autofill:active {
 
 .acct-label {
   font-size: 13px;
-  color: #A09080;
+  color: var(--text-faint);
 }
 
 .error-msg {
-  color: #e57373;
+  color: var(--danger);
   font-size: 13px;
   text-align: center;
   margin-top: 12px;
@@ -292,9 +345,9 @@ input:-webkit-autofill:active {
 }
 
 .cancel-btn {
-  background: #fff !important;
-  border: 1px solid #D8D0C8 !important;
-  color: #8A7565 !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-solid) !important;
+  color: var(--text-muted) !important;
   border-radius: 12px !important;
   padding: 8px 24px !important;
   font-size: 14px !important;
@@ -323,7 +376,7 @@ input:-webkit-autofill:active {
 }
 
 .delete-submit-btn {
-  background: linear-gradient(135deg, #E74C3C, #C0392B);
+  background: var(--danger);
 }
 
 </style>

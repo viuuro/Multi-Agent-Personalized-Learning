@@ -17,13 +17,13 @@
             <div class="edit-section">
               <div class="edit-section-header">
                 <span>任务</span>
-                <el-button size="small" text type="primary" @click="addTask(wi)">
+                <el-button class="add-btn" size="small" text @click="addTask(wi)">
                   <el-icon><Plus /></el-icon>
                 </el-button>
               </div>
               <div v-for="(task, ti) in week.tasks" :key="ti" class="edit-item">
                 <el-input v-model="week.tasks[ti]" size="small" placeholder="任务描述" />
-                <el-button size="small" text type="danger" @click="removeTask(wi, ti)">
+                <el-button class="delete-btn" size="small" text @click="removeTask(wi, ti)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
@@ -32,7 +32,7 @@
             <div class="edit-section">
               <div class="edit-section-header">
                 <span>资源</span>
-                <el-button size="small" text type="primary" @click="addResource(wi)">
+                <el-button class="add-btn" size="small" text @click="addResource(wi)">
                   <el-icon><Plus /></el-icon>
                 </el-button>
               </div>
@@ -40,7 +40,7 @@
                 <el-input v-model="res.title" size="small" placeholder="资源标题" />
                 <el-input v-model="res.url" size="small" placeholder="URL" />
                 <el-input v-model="res.platform" size="small" placeholder="平台" style="width:80px" />
-                <el-button size="small" text type="danger" @click="removeResource(wi, ri)">
+                <el-button class="delete-btn" size="small" text @click="removeResource(wi, ri)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
@@ -250,6 +250,32 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 4px;
+}
+
+.add-btn {
+  color: var(--text-faint) !important;
+  border: 1px solid transparent !important;
+  transition: border-color 0.2s;
+}
+.add-btn:hover,
+.add-btn:focus,
+.add-btn:active {
+  border-color: var(--border-solid) !important;
+  background: transparent !important;
+  color: var(--text-faint) !important;
+}
+
+.delete-btn {
+  color: var(--danger) !important;
+  border: 1px solid transparent !important;
+  transition: border-color 0.2s;
+}
+.delete-btn:hover,
+.delete-btn:focus,
+.delete-btn:active {
+  border-color: var(--danger) !important;
+  background: transparent !important;
+  color: var(--danger) !important;
 }
 
 .edit-item {

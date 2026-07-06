@@ -144,12 +144,12 @@ function escapeHtml(text: string): string {
 
 /* AI 消息：毛玻璃 */
 .assistant .message-content {
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--ai-bubble-bg);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  color: #555;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+  border: 1px solid var(--ai-bubble-border);
+  box-shadow: 0 4px 20px var(--shadow-bubble);
 }
 
 /* ===== Markdown 内容样式（通过 :deep 穿透 scoped） ===== */
@@ -162,7 +162,7 @@ function escapeHtml(text: string): string {
 }
 
 .message-content :deep(code) {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--bg-hover);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 13px;
@@ -208,9 +208,9 @@ function escapeHtml(text: string): string {
 }
 
 .message-content :deep(blockquote) {
-  border-left: 3px solid #D5CFC8;
+  border-left: 3px solid var(--border-solid);
   padding-left: 10px;
-  color: #A09080;
+  color: var(--text-faint);
   margin: 8px 0;
 }
 

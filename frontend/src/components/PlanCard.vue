@@ -248,7 +248,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
@@ -272,10 +272,10 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .expand-week-card {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--ai-bubble-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--ai-bubble-border);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -284,8 +284,8 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #7A6A60;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .edit-week-title {
@@ -310,7 +310,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 
 .expand-week-body h4 {
   font-size: 12px;
-  color: #A09080;
+  color: var(--text-faint);
   margin: 6px 0 4px;
 }
 
@@ -328,19 +328,19 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--ai-bubble-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--ai-bubble-border);
   border-radius: 10px;
   cursor: pointer;
   font-size: 13px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   transition: background 0.2s;
 }
 
 .week-row:hover {
-  background: #EDE8E2;
+  background: var(--bg-hover);
 }
 
 .week-label {
@@ -351,7 +351,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .week-arrow {
-  color: #A09080;
+  color: var(--text-faint);
   flex-shrink: 0;
   margin-left: 4px;
 }
@@ -363,7 +363,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 
 .popover-content h4 {
   font-size: 13px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   margin: 8px 0 4px;
 }
 
@@ -382,7 +382,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   gap: 6px;
   padding: 3px 0;
   font-size: 13px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -403,10 +403,10 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   align-items: center;
   gap: 6px;
   padding: 5px 8px;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--ai-bubble-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid var(--ai-bubble-border);
   border-radius: 10px;
   text-decoration: none;
   font-size: 12px;
@@ -415,7 +415,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .resource-link:hover {
-  background: #F5E8DC;
+  background: var(--bg-hover);
 }
 
 .resource-title {
@@ -426,7 +426,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .plan-empty {
-  color: #B8AFA5;
+  color: var(--text-placeholder);
   font-size: 13px;
   text-align: center;
   padding: 20px 0;
@@ -436,10 +436,10 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 <style>
 .week-popover {
   border-radius: 14px !important;
-  background: rgba(248, 245, 241, 0.85) !important;
+  background: var(--bg-primary) !important;
   backdrop-filter: blur(20px) saturate(1.3) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.3) !important;
-  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+  border: 1px solid var(--ai-bubble-border) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
 }
 

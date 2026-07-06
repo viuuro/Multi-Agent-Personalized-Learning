@@ -12,6 +12,15 @@
     <!-- 下拉菜单 -->
     <transition name="menu-drop">
       <div v-if="showMenu" class="menu-dropdown" @click.stop>
+        <!-- 主题切换 -->
+        <div class="menu-item theme-item" @click="themeStore.toggleMode">
+          <el-icon :size="16">
+            <Moon v-if="themeStore.mode === 'light'" />
+            <Sunny v-else-if="themeStore.mode === 'dark'" />
+            <Monitor v-else />
+          </el-icon>
+          <span>{{ themeModeLabel }}</span>
+        </div>
         <div class="menu-item" @click="handleAccountManage">
           <el-icon :size="16"><User /></el-icon>
           <span>账号管理</span>
@@ -30,14 +39,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { User, SwitchButton, Delete } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { User, SwitchButton, Delete, Moon, Sunny, Monitor } from '@element-plus/icons-vue'
+import { useThemeStore } from '../stores/themeStore'
 
 const emit = defineEmits<{
   (e: 'account-manage'): void
   (e: 'delete-account'): void
   (e: 'logout'): void
 }>()
+
+const themeStore = useThemeStore()
+
+const themeModeLabel = computed(() => {
+  const labels = { auto: '跟随系统', light: '深色模式', dark: '浅色模式' }
+  return labels[themeStore.mode]
+})
 
 const showMenu = ref(false)
 
@@ -99,13 +116,14 @@ function handleDeleteAccount() {
   top: calc(100% + 4px);
   right: 0;
   min-width: 160px;
-  background: rgba(248, 245, 241, 0.95);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   z-index: 1100;
+  border: 1px solid var(--border-light);
 }
 
 .menu-item {
@@ -114,23 +132,27 @@ function handleDeleteAccount() {
   gap: 10px;
   padding: 12px 16px;
   font-size: 13px;
-  color: #7A6A60;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .menu-item:hover {
-  background: rgba(212, 145, 111, 0.1);
+  background: var(--bg-hover);
+}
+
+.theme-item {
+  border-bottom: 1px solid var(--border-light);
 }
 
 .logout-item {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--border-light);
   color: #B87858;
 }
 
 .delete-item {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  color: #E74C3C;
+  border-top: 1px solid var(--border-light);
+  color: var(--danger);
 }
 
 .delete-item:hover {

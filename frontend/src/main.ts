@@ -11,8 +11,13 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'  // Element Plus 全局样式
 import App from './App.vue'
+import { useThemeStore } from './stores/themeStore'
 
 const app = createApp(App)
 app.use(createPinia())   // 注册 Pinia 状态管理
 app.use(ElementPlus)     // 注册 Element Plus UI 库
+
+// 初始化主题（必须在 Pinia 注册之后、mount 之前）
+useThemeStore()
+
 app.mount('#app')        // 挂载到 index.html 的 #app 元素

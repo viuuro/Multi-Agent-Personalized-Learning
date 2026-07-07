@@ -151,16 +151,46 @@ public class ProfileService {
     private void loadTransientFields(UserProfile profile) {
         String json = profile.getProfileJson();
         if (json == null || json.isBlank()) return;
+
+        // 第一次尝试：直接解析 JSON
+        Map<String, Object> map = tryParseJson(json);
+        if (map == null) {
+            // 第二次尝试：JSON 可能被双重编码（外层是字符串，内层是真正的 JSON）
+            // 例如: ""{\\"knowledgeBase\\":7}"" → 先反序列化得到内层 JSON 字符串 → 再解析
+            try {
+                String innerJson = objectMapper.readValue(json, String.class);
+                map = tryParseJson(innerJson);
+                if (map != null) {
+                    log.info("画像 JSON 经过双重解码后成功解析");
+                }
+            } catch (JsonProcessingException ignored) {
+                // 双重解码也失败，放弃
+            }
+        }
+
+        if (map == null) {
+            log.warn("画像 JSON 解析失败（直接解析和双重解码均未成功），JSON 前 100 字符: {}",
+                    json.substring(0, Math.min(100, json.length())));
+            return;
+        }
+
+        profile.setKnowledgeBase(getInt(map, "knowledgeBase", 5));
+        profile.setCognitiveStyle(getString(map, "cognitiveStyle", "visual"));
+        profile.setWeaknessPoints(getStringList(map, "weaknessPoints"));
+        profile.setLearningPace(getInt(map, "learningPace", 5));
+        profile.setInterestAreas(getStringList(map, "interestAreas"));
+        profile.setShortTermGoal(getString(map, "shortTermGoal", ""));
+    }
+
+    /**
+     * 尝试将 JSON 字符串解析为 Map
+     * @return 解析成功返回 Map，失败返回 null
+     */
+    private Map<String, Object> tryParseJson(String json) {
         try {
-            var map = objectMapper.readValue(json, new TypeReference<java.util.Map<String, Object>>() {});
-            profile.setKnowledgeBase(getInt(map, "knowledgeBase", 5));
-            profile.setCognitiveStyle(getString(map, "cognitiveStyle", "visual"));
-            profile.setWeaknessPoints(getStringList(map, "weaknessPoints"));
-            profile.setLearningPace(getInt(map, "learningPace", 5));
-            profile.setInterestAreas(getStringList(map, "interestAreas"));
-            profile.setShortTermGoal(getString(map, "shortTermGoal", ""));
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (JsonProcessingException e) {
-            log.warn("画像 JSON 解析失败: {}", e.getMessage());
+            return null;
         }
     }
 

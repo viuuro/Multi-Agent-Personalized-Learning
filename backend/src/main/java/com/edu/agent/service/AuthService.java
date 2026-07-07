@@ -1,10 +1,7 @@
 package com.edu.agent.service;
 
 import com.edu.agent.model.User;
-import com.edu.agent.repository.UserRepository;
-import com.edu.agent.repository.ConversationRepository;
-import com.edu.agent.repository.LearningPlanRepository;
-import com.edu.agent.repository.UserProfileRepository;
+import com.edu.agent.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -44,16 +41,25 @@ public class AuthService {
     private final ConversationRepository conversationRepository;
     private final UserProfileRepository userProfileRepository;
     private final LearningPlanRepository learningPlanRepository;
+    private final TaskRepository taskRepository;
+    private final TaskSubmissionRepository taskSubmissionRepository;
+    private final AiEvaluationRepository aiEvaluationRepository;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
     public AuthService(UserRepository userRepository,
                        ConversationRepository conversationRepository,
                        UserProfileRepository userProfileRepository,
-                       LearningPlanRepository learningPlanRepository) {
+                       LearningPlanRepository learningPlanRepository,
+                       TaskRepository taskRepository,
+                       TaskSubmissionRepository taskSubmissionRepository,
+                       AiEvaluationRepository aiEvaluationRepository) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.userProfileRepository = userProfileRepository;
         this.learningPlanRepository = learningPlanRepository;
+        this.taskRepository = taskRepository;
+        this.taskSubmissionRepository = taskSubmissionRepository;
+        this.aiEvaluationRepository = aiEvaluationRepository;
     }
 
     /**
@@ -220,13 +226,29 @@ public class AuthService {
 
         log.info(">>> 开始注销账号: userId={}, username={}", userId, user.getUsername());
 
-        // 删除关联数据（按依赖顺序）
+        // 删除关联数据（按依赖顺序：先子表后父表）
+        // 1. 删除 AI 评价结果（通过提交记录关联）
+        taskSubmissionRepository.findByUserId(userId).forEach(
+                sub -> aiEvaluationRepository.deleteBySubmissionId(sub.getId())
+        );
+
+        // 2. 删除任务提交记录
+        taskSubmissionRepository.deleteByUserId(userId);
+        log.info(">>> 已删除用户 {} 的任务提交记录", userId);
+
+        // 3. 删除任务
+        taskRepository.deleteByUserId(userId);
+        log.info(">>> 已删除用户 {} 的任务", userId);
+
+        // 4. 删除对话记录
         conversationRepository.deleteByUserId(userId);
         log.info(">>> 已删除用户 {} 的对话记录", userId);
 
+        // 5. 删除画像数据
         userProfileRepository.deleteByUserId(userId);
         log.info(">>> 已删除用户 {} 的画像数据", userId);
 
+        // 6. 删除学习计划
         learningPlanRepository.deleteByUserId(userId);
         log.info(">>> 已删除用户 {} 的学习计划", userId);
 

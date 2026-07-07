@@ -111,13 +111,28 @@ mvn spring-boot:run
 
 ### 5. 启动前端
 
+安装 Node.js 依赖并启动开发服务器：
+
 ```bash
+# 1. 进入前端目录
 cd frontend
+
+# 2. 安装依赖（首次启动或 node_modules 缺失时需要）
 npm install
+
+# 3. 启动前端开发服务器
 npm run dev
 ```
 
-前端启动在 `http://localhost:5173`，Vite 自动将 `/api` 请求代理到后端 `localhost:8080`。
+前端默认访问地址：**http://localhost:5173**
+
+> Vite 会自动将 `/api` 请求代理到后端 `localhost:8080`，无需额外配置。
+
+> 如果遇到依赖安装失败，可以尝试清空 `node_modules` 和 `package-lock.json` 后重试：
+> ```bash
+> rm -rf node_modules package-lock.json
+> npm install
+> ```
 
 ### 6. 访问系统
 

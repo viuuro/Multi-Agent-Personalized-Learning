@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useProfileStore } from '../stores/profileStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -24,6 +24,9 @@ import { useThemeStore } from '../stores/themeStore'
 const profileStore = useProfileStore()
 const chartRef = ref<HTMLDivElement>()
 let chartInstance: echarts.ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
+let resizeFrame: number | null = null
+let settleTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 初始化 ECharts 实例 */
 function initChart() {
@@ -58,12 +61,12 @@ function updateChart() {
 
   // 6 个维度的指标定义（简化标签，避免换行遮挡）
   const indicator = [
-    { name: '薄弱点', max: 10 },
-    { name: '学习节奏', max: 10 },
-    { name: '学习风格', max: 10 },
-    { name: '目标明确度', max: 10 },
-    { name: '兴趣广度', max: 10 },
-    { name: '知识基础', max: 10 },
+    { name: '薄弱\n点', max: 10 },
+    { name: '学习\n节奏', max: 10 },
+    { name: '学习\n风格', max: 10 },
+    { name: '目标\n明确度', max: 10 },
+    { name: '兴趣\n广度', max: 10 },
+    { name: '知识\n基础', max: 10 },
   ]
 
   // 将画像数据映射到雷达图数值（无数据时全部为 0）
@@ -72,20 +75,41 @@ function updateChart() {
   const interestValue = !hasData ? 0 : Math.min(10, p.interestAreas.length * 2 + 2)
   const goalValue = !hasData ? 0 : p.shortTermGoal ? Math.min(10, p.shortTermGoal.length / 2) : 2
 
+  const style = getComputedStyle(document.documentElement)
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+
   const option: echarts.EChartsOption = {
     animationDuration: 800,
     animationEasing: 'cubicOut',
     tooltip: {
       trigger: 'item',
-      position: (point: [number, number]) => [point[0] + 14, point[1] + 14],
+      renderMode: 'html',
+      appendTo: 'body',
+      confine: false,
+      position: (point: [number, number], params, dom) => {
+        const tooltipWidth = dom instanceof HTMLElement ? dom.offsetWidth : 100;
+        const x = point[0] - tooltipWidth - 10;
+        const y = point[1] - 10;
+        return [x, y];
+      },
+      backgroundColor: isDark ? 'rgba(40, 36, 32, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+      borderWidth: 1,
+      textStyle: {
+        color: isDark ? '#ece6e0' : '#3D4255',
+        fontSize: 12,
+      },
+      extraCssText: 'backdrop-filter: blur(12px); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 9999;',
     },
     radar: {
-      center: ['50%', '40%'],
-      radius: '55%',
+      center: ['50%', '50%'],
+      radius: '65%',
       indicator,
       axisName: {
         color: colors.textSecondary,
-        fontSize: 11,
+        fontSize: 12,
+        lineHeight: 15,
+        align: 'center',
         borderRadius: 3,
         padding: [3, 5],
       },
@@ -143,16 +167,50 @@ function updateChart() {
 
 onMounted(() => {
   initChart()
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(scheduleResize)
+    resizeObserver.observe(chartRef.value)
+  }
   window.addEventListener('resize', handleResize)
+  scheduleResize()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  if (settleTimer) clearTimeout(settleTimer)
   chartInstance?.dispose()
 })
 
 function handleResize() {
-  chartInstance?.resize()
+  scheduleResize()
+}
+
+/**
+ * 侧边栏动画期间可能短暂出现 0px 或中间宽度。
+ * 仅在容器恢复到有效尺寸后重绘，并在动画结束后再校准一次。
+ */
+function scheduleResize() {
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  resizeFrame = requestAnimationFrame(() => resizeToContainer())
+
+  if (settleTimer) clearTimeout(settleTimer)
+  settleTimer = setTimeout(() => resizeToContainer(), 280)
+}
+
+function resizeToContainer() {
+  const element = chartRef.value
+  if (!element || !chartInstance) return
+
+  const { width, height } = element.getBoundingClientRect()
+  if (width < 220 || height < 300) return
+
+  chartInstance.resize({
+    width: Math.round(width),
+    height: Math.round(height),
+    animation: { duration: 0 },
+  })
 }
 
 // 监听画像数据变化，自动更新雷达图
@@ -166,13 +224,23 @@ watch(() => themeStore.isDark, updateChart)
 <style scoped>
 .radar-chart-container {
   position: relative;
-  z-index: 2000;
+  z-index: 1;
   width: 100%;
+  height: 320px;
+  min-height: 320px;
+  max-height: 320px;
   padding: 0;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
 }
 
 .radar-canvas {
   width: 100%;
-  height: 260px;
+  height: 100%;
+  min-width: 0;
+  margin: 0 auto;
 }
 </style>

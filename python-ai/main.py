@@ -538,16 +538,28 @@ def _find_real_resources(topic: str, context: str = "") -> list[dict]:
 
     # 用上下文+主题提取精准关键词
     search_keyword = _extract_search_keywords(topic, context)
-    bilibili_results = _search_bilibili(f"{search_keyword} 教程", count=2)
-    if bilibili_results:
-        resources.extend(bilibili_results[:1])
+
+    # 尝试从 B站搜索真实视频
+    try:
+        bilibili_results = _search_bilibili(f"{search_keyword} 教程", count=2)
+        if bilibili_results and isinstance(bilibili_results, list):
+            for r in bilibili_results[:1]:
+                if isinstance(r, dict) and r.get("url"):
+                    resources.append(r)
+    except Exception as e:
+        logger.warning(f"B站搜索失败: {e}")
 
     # MOOC 搜索链接兜底
-    mooc_results = _search_mooc(search_keyword, count=1)
-    if mooc_results:
-        resources.extend(mooc_results[:1])
+    try:
+        mooc_results = _search_mooc(search_keyword, count=1)
+        if mooc_results and isinstance(mooc_results, list):
+            for r in mooc_results[:1]:
+                if isinstance(r, dict) and r.get("url"):
+                    resources.append(r)
+    except Exception as e:
+        logger.warning(f"MOOC搜索失败: {e}")
 
-    # 兜底
+    # 兜底：如果搜索都失败，使用搜索链接
     if not resources:
         resources = [
             {"title": f"【B站】{search_keyword}教程", "url": f"https://search.bilibili.com/all?keyword={quote_plus(search_keyword + ' 教程')}", "platform": "B站", "type": "video"},
@@ -555,10 +567,14 @@ def _find_real_resources(topic: str, context: str = "") -> list[dict]:
         ]
 
     # 确保至少 2 个
-    if len(resources) < 2:
-        missing = "中国大学MOOC" if resources[0].get("platform") == "B站" else "B站"
-        fb = _build_search_url(missing, search_keyword)
-        resources.append({"title": f"【{missing}】{search_keyword}相关资源", "url": fb["url"], "platform": missing, "type": fb["type"]})
+    while len(resources) < 2:
+        if len(resources) == 0:
+            resources.append({"title": f"【B站】{search_keyword}教程", "url": f"https://search.bilibili.com/all?keyword={quote_plus(search_keyword)}", "platform": "B站", "type": "video"})
+        else:
+            existing_platform = resources[0].get("platform", "B站") if isinstance(resources[0], dict) else "B站"
+            missing = "中国大学MOOC" if existing_platform == "B站" else "B站"
+            fb = _build_search_url(missing, search_keyword)
+            resources.append({"title": f"【{missing}】{search_keyword}相关资源", "url": fb["url"], "platform": missing, "type": fb["type"]})
 
     return resources[:2]
 
@@ -595,16 +611,25 @@ async def chat(req: ChatRequest):
     existing_profile = {}
     if req.profile_json:
         try:
-            existing_profile = json.loads(req.profile_json)
-        except json.JSONDecodeError:
-            pass
+            # 处理可能的双重编码
+            parsed = json.loads(req.profile_json)
+            if isinstance(parsed, str):
+                # 如果解析出来还是字符串，再解析一次
+                existing_profile = json.loads(parsed)
+            elif isinstance(parsed, dict):
+                existing_profile = parsed
+            else:
+                existing_profile = {}
+        except (json.JSONDecodeError, TypeError):
+            existing_profile = {}
 
     # Step 1: 画像提取
     profile = extract_profile(req.message)
     # 合并已有画像（保留未被覆盖的字段）
-    for key in existing_profile:
-        if key not in profile or not profile[key]:
-            profile[key] = existing_profile[key]
+    if isinstance(existing_profile, dict):
+        for key in existing_profile:
+            if key not in profile or not profile[key]:
+                profile[key] = existing_profile[key]
 
     # Step 2: 生成回复（支持多模态）
     response = generate_chat_response(req.message, profile, req.image_data)

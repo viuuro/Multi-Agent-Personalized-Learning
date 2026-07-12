@@ -139,7 +139,7 @@ function escapeHtml(text: string): string {
 .user .message-content {
   background: var(--accent);
   color: white;
-  box-shadow: 0 4px 18px var(--accent-glow);
+  box-shadow: none;
 }
 
 /* AI 消息：毛玻璃 */

@@ -31,13 +31,13 @@ const live2dRef = ref<HTMLDivElement>()
 let oml2d: Oml2dInstance | null = null
 
 // ===== 尺寸 =====
-const baseScale = 0.262
-const containerWidth = 485
-const containerHeight = 500
+const baseScale = 0.215
+const containerWidth = 360
+const containerHeight = 410
 const currentScale = ref(baseScale)
 // 脚底锚点下推 + 左移，确保头部和胸部在可视区
-const modelOffsetY = 1024
-const modelOffsetX = -285
+const modelOffsetY = 865
+const modelOffsetX = -242
 
 const expressions = [
   { id: 'panic', label: '慌张' },
@@ -213,23 +213,11 @@ onUnmounted(() => {
 }
 
 .live2d-bg-text {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  transform: translate(18px, 0px);
-  pointer-events: none;
+  display: none;
 }
 
 .bg-line {
-  font-size: 154px;
-  font-weight: 800;
-  color: var(--live2d-text);
-  line-height: 0.85;
-  letter-spacing: 0.15em;
-  user-select: none;
+  display: none;
 }
 
 .mari-wrapper {
@@ -240,7 +228,7 @@ onUnmounted(() => {
 
 .mari-bar {
   width: 98%;
-  height: 128px;
+  height: 104px;
   margin-top: 24px;
   background: var(--live2d-text);
   border-radius: 0;

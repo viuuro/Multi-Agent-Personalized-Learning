@@ -1,11 +1,11 @@
 <template>
-  <div class="chat-view">
+  <div ref="chatViewRef" class="chat-view" :class="{ 'sidebar-closed': !sidebarOpen }">
     <!-- ==================== 左侧面板 ==================== -->
     <div class="left-panel">
       <div class="panel-card">
         <!-- 卡片头部：标题+操作（左） / 标签切换（右） -->
         <div class="card-header">
-          <div class="card-header-left">
+          <div class="profile-heading">
             <template v-if="activeTab === 'plan' && planHasData">
               <span class="card-title">4周学习计划</span>
             </template>
@@ -20,7 +20,8 @@
         </div>
 
         <!-- 学习画像内容 -->
-        <div v-show="activeTab === 'profile'" class="tab-content">
+        <aside v-show="sidebarOpen" class="workspace-sidebar">
+        <div class="tab-content profile-content">
           <div class="radar-layout">
             <div class="radar-left">
               <RadarChart />
@@ -50,40 +51,23 @@
         </div>
 
         <!-- 学习计划内容 -->
-        <div v-show="activeTab === 'plan'" class="tab-content plan-tab-content">
+        <div class="tab-content plan-tab-content">
           <div v-if="!planHasData" class="plan-empty-state">
-            <el-button type="primary" @click="handleGeneratePlan" :loading="planLoading">
-              生成学习计划
-            </el-button>
-            <p v-if="!planLoading">还没有学习计划</p>
-            <div v-else class="plan-loading-text">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              <span>多智能体协同中，正在生成学习计划...</span>
-            </div>
+            <button class="submit-file-btn" @click="handleGeneratePlan" :disabled="planLoading">
+              <el-icon :size="14"><Loading v-if="planLoading" /><Plus v-else /></el-icon>
+              <span>{{ planLoading ? '生成中...' : '生成学习计划' }}</span>
+            </button>
           </div>
 
           <PlanCard ref="planCardRef" />
 
-          <div v-if="planHasData" class="plan-footer">
-            <button class="submit-file-btn" @click="handleSubmissionUpload" :disabled="submitting">
-              <svg v-if="!submitting" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-              <el-icon v-else class="is-loading"><Loading /></el-icon>
-              <span>{{ submitting ? 'AI评分中...' : '提交学习成果' }}</span>
+          <div v-if="planHasData" class="plan-header-btns">
+            <button class="expand-plan-btn" @click="showEditModal = true">
+              <el-icon><Edit /></el-icon>
             </button>
-            <div class="plan-footer-actions">
-              <el-button class="edit-btn" size="small" text @click="showEditModal = true">
-                <el-icon><Edit /></el-icon>
-                编辑
-              </el-button>
-              <el-button class="expand-btn" size="small" text @click="showExpandModal = true">
-                <el-icon><FullScreen /></el-icon>
-                展开
-              </el-button>
-            </div>
+            <button class="expand-plan-btn" @click="showExpandModal = true">
+              <el-icon><FullScreen /></el-icon>
+            </button>
           </div>
 
           <!-- 评分结果显示 -->
@@ -96,11 +80,36 @@
             <p class="eval-suggestion">{{ evaluationResult.suggestion }}</p>
           </div>
         </div>
+        </aside>
       </div>
     </div>
 
+    <div
+      v-if="planHasData && sidebarOpen"
+      class="submission-dock"
+      :style="{ top: submissionCenterY ? `${submissionCenterY}px` : '72%' }"
+    >
+      <button class="submit-file-btn" @click="handleSubmissionUpload" :disabled="submitting">
+        <el-icon :size="14"><Upload /></el-icon>
+        <span>{{ submitting ? 'AI评分中...' : '提交学习成果' }}</span>
+      </button>
+    </div>
+
     <!-- ==================== 右侧面板 ==================== -->
-    <div class="right-panel">
+    <button
+      class="sidebar-toggle"
+      :class="{ collapsed: !sidebarOpen }"
+      type="button"
+      :aria-expanded="sidebarOpen"
+      aria-label="切换学习计划侧边栏"
+      @click="sidebarOpen = !sidebarOpen"
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="m8 5 5 5-5 5" />
+      </svg>
+    </button>
+
+    <div class="chat-panel">
       <div class="panel-card chat-card">
         <div class="message-list" ref="messageListRef">
           <MessageBubble
@@ -156,7 +165,7 @@
               </div>
             </div>
           </transition>
-          <div class="capsule-bar">
+          <div ref="capsuleBarRef" class="capsule-bar">
             <!-- + 按钮（左下角，圆形，与发送按钮风格一致） -->
             <button class="plus-btn" @click.stop="showPlusMenu = !showPlusMenu">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -248,7 +257,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { FullScreen, Edit, Loading, Picture, Document } from '@element-plus/icons-vue'
+import { FullScreen, Edit, Loading, Picture, Document, Upload } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
@@ -267,6 +276,9 @@ let lastLoadedUserId: number | null = null
 
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement>()
+const chatViewRef = ref<HTMLDivElement>()
+const capsuleBarRef = ref<HTMLDivElement>()
+const submissionCenterY = ref(0)
 const messageListRef = ref<HTMLDivElement>()
 const planCardRef = ref<InstanceType<typeof PlanCard>>()
 const planLoading = ref(false)
@@ -275,6 +287,7 @@ const showEditModal = ref(false)
 const editPlanCardRef = ref<InstanceType<typeof PlanCard>>()
 const activeTab = ref<'profile' | 'plan'>('profile')
 const planHasData = ref(false)
+const sidebarOpen = ref(true)
 const showPlusMenu = ref(false)
 const imageInputRef = ref<HTMLInputElement>()
 const fileInputRef = ref<HTMLInputElement>()
@@ -565,6 +578,21 @@ watch(
 )
 
 let scrollTimer: ReturnType<typeof setTimeout> | null = null
+let alignmentObserver: ResizeObserver | null = null
+let alignmentFrame: number | null = null
+
+function syncSubmissionCenter() {
+  if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
+  alignmentFrame = requestAnimationFrame(() => {
+    const container = chatViewRef.value
+    const composer = capsuleBarRef.value
+    if (!container || !composer) return
+
+    const containerRect = container.getBoundingClientRect()
+    const composerRect = composer.getBoundingClientRect()
+    submissionCenterY.value = composerRect.top + composerRect.height / 2 - containerRect.top
+  })
+}
 
 function handleMsgScroll() {
   const el = messageListRef.value
@@ -581,13 +609,23 @@ function closePlusMenu() {
 onMounted(() => {
   messageListRef.value?.addEventListener('scroll', handleMsgScroll)
   document.addEventListener('click', closePlusMenu)
+  alignmentObserver = new ResizeObserver(syncSubmissionCenter)
+  if (chatViewRef.value) alignmentObserver.observe(chatViewRef.value)
+  if (capsuleBarRef.value) alignmentObserver.observe(capsuleBarRef.value)
+  window.addEventListener('resize', syncSubmissionCenter)
+  nextTick(syncSubmissionCenter)
 })
 
 onUnmounted(() => {
   messageListRef.value?.removeEventListener('scroll', handleMsgScroll)
   document.removeEventListener('click', closePlusMenu)
+  window.removeEventListener('resize', syncSubmissionCenter)
+  alignmentObserver?.disconnect()
+  if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
   if (scrollTimer) clearTimeout(scrollTimer)
 })
+
+watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 </script>
 
 <style scoped>
@@ -600,10 +638,46 @@ onUnmounted(() => {
 .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0; flex-shrink: 0; }
 .card-header-left { display: flex; align-items: center; gap: 8px; }
 .card-title { display: inline-block; position: relative; top: 24px; font-size: 20px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; margin-left: 10px; }
-.edit-btn { color: var(--accent); margin-left: 0; border: 1px solid transparent !important; transition: border-color 0.2s; }
-.edit-btn:hover, .edit-btn:focus, .edit-btn:active { border-color: var(--border-solid) !important; background: transparent !important; color: var(--accent) !important; }
-.expand-btn { color: var(--accent); border: 1px solid transparent !important; transition: border-color 0.2s; }
-.expand-btn:hover, .expand-btn:focus, .expand-btn:active { border-color: var(--border-solid) !important; background: transparent !important; color: var(--accent) !important; }
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-solid) !important;
+  border-radius: 10px !important;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--accent) !important;
+  font-size: 12px !important;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.edit-btn:hover, .edit-btn:focus, .edit-btn:active {
+  background: var(--bg-hover) !important;
+  color: var(--accent) !important;
+}
+.edit-btn .el-icon { margin-right: 2px; }
+.expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-solid) !important;
+  border-radius: 10px !important;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--accent) !important;
+  font-size: 12px !important;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.expand-btn:hover, .expand-btn:focus, .expand-btn:active {
+  background: var(--bg-hover) !important;
+  color: var(--accent) !important;
+}
+.expand-btn .el-icon { margin-right: 2px; }
 .card-tabs { margin-left: auto; }
 .tab-slider { display: flex; position: relative; background: var(--bg-input); border: 1px solid var(--border-solid); border-radius: 10px; overflow: hidden; }
 .tab-option { position: relative; z-index: 1; padding: 4px 14px; font-size: 12px; color: var(--text-muted); cursor: pointer; transition: color 0.25s; user-select: none; }
@@ -621,22 +695,23 @@ onUnmounted(() => {
 
 /* 提交按钮 */
 .submit-file-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 18px;
-  border: 1.5px solid var(--accent);
-  border-radius: 20px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: 0 0 14px var(--accent-glow);
+  transition: border-color 0.2s;
 }
-.submit-file-btn:hover:not(:disabled) {
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 4px 22px var(--accent-glow);
+.submit-file-btn:hover:not(:disabled),
+.submit-file-btn:focus:not(:disabled),
+.submit-file-btn:active:not(:disabled) {
+  border-color: var(--border-solid);
+  background: var(--bg-hover);
+  color: var(--accent);
 }
 .submit-file-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -663,15 +738,15 @@ onUnmounted(() => {
 .radar-left { flex-shrink: 0; width: 55%; }
 .radar-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-left: 16px; margin-top: -54px; }
 .summary-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.summary-row .label { color: var(--text-faint); width: 32px; flex-shrink: 0; }
-.summary-row .value { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-row .label { color: var(--accent); width: 32px; flex-shrink: 0; }
+.summary-row .value { color: var(--text-muted); flex: 1; word-break: break-all; white-space: normal; line-height: 1.4; }
 .plan-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px 20px; }
 .plan-empty-state p { font-size: 13px; color: var(--text-placeholder); }
 .plan-loading-text { display: flex; align-items: center; gap: 8px; color: var(--text-faint); font-size: 13px; }
 .plan-empty-state .el-button--primary { background: var(--accent); border: none; border-radius: 12px; }
-.right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: transparent; padding: 12px 12px 12px 0; margin-left: 24px; }
+.right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: transparent; padding: 12px 12px 12px 0; margin-left: 16px; }
 .chat-card { position: relative; background: transparent; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.chat-card::before { content: ''; position: absolute; inset: 0; background: transparent; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 20px; z-index: -1; }
+.chat-card::before { content: ''; position: absolute; inset: 0; background: transparent; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 20px; z-index: -1; box-shadow: none; }
 .message-list { position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 0px 10px; }
 .message-list::-webkit-scrollbar { width: 5px; }
 .message-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
@@ -707,13 +782,349 @@ onUnmounted(() => {
 .capsule-input::-webkit-scrollbar { width: 3px; }
 .capsule-input::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 .capsule-input::placeholder { color: var(--text-placeholder); }
-.capsule-send { flex-shrink: 0; padding: 8px 20px; margin-right: 1px; border: none; border-radius: 12px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; transition: opacity 0.2s, box-shadow 0.2s; box-shadow: 0 4px 18px var(--accent-glow); }
+.capsule-send { flex-shrink: 0; padding: 8px 20px; margin-right: 1px; border: none; border-radius: 12px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; transition: opacity 0.2s; }
 .capsule-send:disabled { opacity: 0.5; cursor: not-allowed; }
 .capsule-send:not(:disabled):hover { opacity: 0.85; }
 .expand-plan-content { max-height: 65vh; overflow-y: auto; }
 .expand-plan-content::-webkit-scrollbar { width: 4px; }
 .expand-plan-content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
-@media (max-width: 900px) { .chat-view { flex-direction: column; } .left-panel { width: 100%; min-width: 0; flex-shrink: 0; border-bottom: 1px solid var(--border-solid); } }
+/* Three-column workspace: compact profile / conversation / action sidebar */
+.chat-view {
+  display: grid;
+  grid-template-columns: minmax(250px, 21vw) minmax(0, 1fr) minmax(280px, 304px);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  transition: grid-template-columns 240ms ease;
+}
+.chat-view.sidebar-closed {
+  grid-template-columns: minmax(250px, 21vw) minmax(0, 1fr) 0;
+}
+.left-panel,
+.left-panel .panel-card { display: contents; }
+.left-panel .card-header,
+.left-panel .profile-content {
+  grid-column: 1;
+  min-width: 0;
+}
+.left-panel .card-header {
+  grid-row: 1;
+  align-self: start;
+  display: block;
+  padding: 22px 18px 0;
+  margin: 0;
+}
+.left-panel .profile-heading { display: none; }
+.left-panel .card-header-left,
+.left-panel .card-tabs { display: none; }
+.left-panel .profile-content {
+  grid-row: 1;
+  align-self: start;
+  margin-top: 8px;
+  padding: 0 12px;
+  overflow: visible;
+}
+.left-panel .radar-layout {
+  display: block;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 6px 11px;
+}
+.left-panel .radar-left { width: 100%; }
+.left-panel .radar-right {
+  margin: -18px 5px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.left-panel .summary-row {
+  min-width: 0;
+  display: block;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: transparent;
+}
+.left-panel .summary-row .label {
+  display: block;
+  width: auto;
+  margin-bottom: 2px;
+  font-size: 10px;
+}
+.left-panel .summary-row .value {
+  display: block;
+  font-size: 11px;
+}
+.chat-panel {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 16px;
+}
+.chat-panel .panel-card { width: 100%; }
+.left-panel .plan-tab-content {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  width: 304px;
+  min-width: 304px;
+  padding: 58px 16px 16px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border-left: none;
+  box-shadow: none;
+  transition: opacity 240ms ease, transform 240ms ease, width 240ms ease, min-width 240ms ease, padding 240ms ease;
+}
+.chat-view.sidebar-closed .left-panel .plan-tab-content {
+  opacity: 0;
+  transform: translateX(20px);
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-left: none;
+  overflow: hidden;
+}
+.left-panel .plan-tab-content::before {
+  content: '计划与成果';
+  position: absolute;
+  top: 25px;
+  left: 21.5%;
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 700;
+}
+.left-panel .plan-tab-content::after {
+  content: '';
+  display: none;
+}
+.plan-header-actions {
+  display: flex;
+  gap: 2px;
+}
+.plan-header-btns {
+  position: absolute;
+  top: 22px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+}
+.expand-plan-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.expand-plan-btn:hover {
+  background: var(--bg-hover);
+}
+.left-panel .plan-empty-state { padding: 70px 12px 28px; }
+.left-panel .plan-footer { flex-wrap: wrap; }
+.left-panel .submit-file-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 9px 12px;
+  border-color: var(--border-solid);
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+}
+.sidebar-toggle {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
+  align-self: start;
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  margin: 22px 0 0 -16px;
+  border: 1px solid var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.sidebar-toggle:hover { background: var(--bg-hover); }
+.sidebar-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.chat-view.sidebar-closed .sidebar-toggle { transform: rotate(180deg); }
+.chat-view.sidebar-closed .plan-tab-content {
+  opacity: 0;
+  transform: translateX(20px);
+  pointer-events: none;
+  overflow: hidden;
+  min-width: 0;
+  width: 0;
+  padding: 0;
+  border: none;
+}
+
+/* Radar and planning now share the collapsible right sidebar. */
+.chat-view {
+  position: relative;
+  grid-template-columns: minmax(250px, 21vw) minmax(0, 1fr) 304px;
+}
+.chat-view.sidebar-closed {
+  grid-template-columns: minmax(250px, 21vw) minmax(0, 1fr) 0;
+}
+.left-panel .card-header { display: none; }
+.workspace-sidebar {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  width: 304px;
+  min-width: 304px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  transition: opacity 240ms ease, transform 240ms ease;
+}
+.left-panel .profile-content {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px 4px;
+  overflow: visible;
+  border-bottom: none;
+}
+.left-panel .profile-content::before {
+  content: '';
+  display: none;
+}
+.left-panel .radar-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 4px 2px;
+}
+.left-panel .radar-left {
+  width: 100%;
+  min-height: 320px;
+  flex: 0 0 320px;
+}
+.left-panel .radar-right {
+  width: calc(100% - 8px);
+  margin: 0 auto;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+}
+.left-panel .summary-row {
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 5px 7px;
+  text-align: left;
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px var(--border-solid);
+}
+.left-panel .summary-row:nth-child(n + 3) {
+  grid-column: 1 / -1;
+}
+.left-panel .summary-row .label {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 1px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-faint);
+}
+.left-panel .summary-row .value {
+  min-width: 0;
+  flex: 1;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.left-panel .plan-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: auto;
+  min-width: 0;
+  padding: 58px 16px 16px;
+  overflow-y: auto;
+  background: transparent;
+}
+.chat-panel {
+  grid-column: 2;
+  padding-right: 20px;
+}
+.sidebar-toggle {
+  grid-column: 3;
+}
+.submission-dock {
+  position: absolute;
+  right: 16px;
+  z-index: 80;
+  width: 272px;
+  transform: translateY(-50%);
+}
+.submission-dock .submit-file-btn {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
+  padding: 9px 12px;
+  border-color: var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: none;
+}
+.chat-view.sidebar-closed .workspace-sidebar { display: none !important; }
+
+@media (max-width: 980px) {
+  .chat-view { grid-template-columns: minmax(210px, 27vw) minmax(0, 1fr) 280px; }
+  .chat-view.sidebar-closed { grid-template-columns: minmax(210px, 27vw) minmax(0, 1fr) 0; }
+  .workspace-sidebar { width: 280px; min-width: 280px; }
+  .submission-dock { width: 248px; }
+}
+@media (max-width: 760px) {
+  .chat-view, .chat-view.sidebar-closed { display: flex; flex-direction: column; overflow-y: auto; }
+  .left-panel, .left-panel .panel-card { display: contents; }
+  .workspace-sidebar { order: 2; width: 100%; min-width: 0; height: auto; overflow: visible; }
+  .chat-panel { order: 1; flex: 1; min-height: 520px; padding: 0 12px 12px; }
+  .left-panel .profile-content { padding: 16px 12px 12px; }
+  .left-panel .plan-tab-content { width: 100%; min-height: 360px; border-left: none; }
+  .sidebar-toggle { display: none; }
+  .submission-dock {
+    position: static;
+    order: 3;
+    width: calc(100% - 24px);
+    margin: 0 12px 12px;
+    transform: none;
+  }
+}
 </style>
 
 <style>

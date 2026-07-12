@@ -111,20 +111,20 @@ public class MockAiService {
      * @return Markdown 格式的回复文本
      */
     public String mockChatResponse(String userMessage, UserProfile profile) {
+        String message = userMessage == null ? "" : userMessage.trim();
         String goal = profile.getShortTermGoal();
         if (goal == null || goal.isBlank()) {
             goal = "提升学习能力";
         }
 
-        return "你好！我已经分析了你的学习情况。\n\n"
-                + "根据我们的对话，我了解到你的学习目标是：**" + goal + "**。\n\n"
-                + "你的知识基础评分为 **" + profile.getKnowledgeBase() + "/10**，"
-                + "学习风格偏向 **" + (profile.getCognitiveStyle().equals("visual") ? "视觉型" :
-                                        profile.getCognitiveStyle().equals("verbal") ? "语言型" : "动手实践型") + "**。\n\n"
-                + "我注意到你在以下方面可以加强：\n"
-                + profile.getWeaknessPoints().stream().map(w -> "- " + w + "\n").reduce("", String::concat) + "\n"
-                + "为了更好地帮助你，你可以点击右侧的「生成学习计划」按钮，"
-                + "我将为你制定一个为期4周的个性化学习计划。你也可以继续告诉我更多关于你学习习惯的信息！";
+        if (message.isBlank()) {
+            return "我没有收到有效的消息，请重新输入你的学习问题。";
+        }
+
+        return "我收到了你的问题：**" + message + "**\n\n"
+                + "当前 AI 服务暂时不可用，系统已进入本地降级模式，因此无法可靠生成完整回答。"
+                + "请确认 Python AI 服务已启动，并检查其 MiMo API 配置后重试。\n\n"
+                + "根据本地规则初步识别到的学习目标是：**" + goal + "**。";
     }
 
     /**

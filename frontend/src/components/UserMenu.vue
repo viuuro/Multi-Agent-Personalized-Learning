@@ -105,11 +105,13 @@ function handleDeleteAccount() {
   padding: 6px;
   border-radius: 8px;
   color: var(--accent);
-  transition: background 0.2s;
+  transition: none;
 }
 
-.hamburger-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+.hamburger-btn:hover,
+.hamburger-btn:focus,
+.hamburger-btn:active {
+  background: transparent;
 }
 
 .menu-dropdown {

@@ -77,13 +77,14 @@ public class ChatService {
     /** 【Spring Boot】构造器注入 —— Spring 自动装配所有依赖 */
     public ChatService(ConversationRepository conversationRepository,
                        ProfileService profileService,
-                       MockAiService mockAiService) {
+                       MockAiService mockAiService,
+                       @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.conversationRepository = conversationRepository;
         this.profileService = profileService;
         this.mockAiService = mockAiService;
-        // 检查环境变量决定运行模式
-        String apiKey = System.getenv("MIMO_API_KEY");
-        this.mockMode = (apiKey == null || apiKey.isBlank());
+        // MiMo API Key 只需要配置在 Python AI 服务中；Spring 默认始终调用 Python。
+        // 只有显式设置 AI_MOCK_ENABLED=true 时才启用本地 Mock 模式。
+        this.mockMode = mockMode;
         log.info(">>> ChatService 初始化完成，模式: {}", mockMode ? "MOCK" : "REAL (Python AI → MiMo-v2.5)");
     }
 

@@ -50,6 +50,7 @@ python:
 # 用于任务成果的自动评分与分析
 # -----------------------------------------------------------
 ai:
+  mock-enabled: ${AI_MOCK_ENABLED:false}            # 仅显式开启时使用本地 Mock；默认调用 Python AI
   api-key: ${AI_API_KEY:}                         # API 密钥（不配置则使用 Mock 降级模式）
   base-url: ${AI_BASE_URL:https://api.openai.com/v1}  # API 基础地址
   model: ${AI_MODEL:gpt-4o}                      # 模型名称

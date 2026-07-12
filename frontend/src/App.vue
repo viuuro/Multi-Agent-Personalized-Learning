@@ -3,7 +3,18 @@
     <!-- 顶部导航栏：系统名称 + 副标题 + 汉堡菜单 -->
     <header class="app-header">
       <div class="header-left">
-        <h1>Multi-Agent Personalized Learning</h1>
+        <button
+          v-if="authStore.isLoggedIn"
+          class="header-tab-btn"
+          :class="{ active: activeHeaderTab === 'data' }"
+          @click="activeHeaderTab = 'data'"
+        >学习数据</button>
+        <button
+          v-if="authStore.isLoggedIn"
+          class="header-tab-btn"
+          :class="{ active: activeHeaderTab === 'files' }"
+          @click="activeHeaderTab = 'files'"
+        >历史文件</button>
       </div>
       <div class="header-right">
         <UserMenu
@@ -19,6 +30,51 @@
     <main class="app-main">
       <ChatView />
     </main>
+
+    <!-- 学习数据 / 历史文件 面板 -->
+    <div v-if="authStore.isLoggedIn" class="overlay-panel">
+      <!-- 学习数据：贡献图 -->
+      <div v-if="activeHeaderTab === 'data'" class="contribution-graph">
+        <div class="graph-header">
+          <span class="graph-title">学习活跃度</span>
+          <span class="graph-subtitle">近 16 周</span>
+        </div>
+        <div class="graph-grid">
+          <div
+            v-for="(day, i) in contributionData"
+            :key="i"
+            class="graph-cell"
+            :style="{ opacity: day.count === 0 ? 0.15 : 0.3 + day.count * 0.15 }"
+            :title="`${day.date}: ${day.count} 次对话`"
+          ></div>
+        </div>
+        <div class="graph-legend">
+          <span>少</span>
+          <div class="legend-cell" style="opacity: 0.15"></div>
+          <div class="legend-cell" style="opacity: 0.45"></div>
+          <div class="legend-cell" style="opacity: 0.6"></div>
+          <div class="legend-cell" style="opacity: 0.75"></div>
+          <div class="legend-cell" style="opacity: 0.9"></div>
+          <span>多</span>
+        </div>
+      </div>
+
+      <!-- 历史文件 -->
+      <div v-else class="file-history">
+        <div class="file-header">
+          <span class="file-title">历史文件</span>
+          <span class="file-subtitle">最近上传</span>
+        </div>
+        <div v-if="uploadedFiles.length === 0" class="file-empty">暂无上传记录</div>
+        <div v-else class="file-list">
+          <div v-for="(file, i) in uploadedFiles" :key="i" class="file-item">
+            <el-icon :size="14"><Document /></el-icon>
+            <span class="file-name">{{ file.name }}</span>
+            <span class="file-time">{{ file.time }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Live2D 看板娘 -->
     <Live2DWidget v-if="authStore.isLoggedIn" />
@@ -101,6 +157,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Document } from '@element-plus/icons-vue'
 import { useAuthStore } from './stores/authStore'
 import { deleteAccountApi } from './services/api'
 import type { AuthUser } from './services/api'
@@ -113,6 +170,25 @@ import AccountModal from './components/AccountModal.vue'
 const authStore = useAuthStore()
 const showAccountModal = ref(false)
 const showAuth = ref(!authStore.isLoggedIn)
+const activeHeaderTab = ref<'data' | 'files'>('data')
+
+// 贡献图数据（16周 = 112天）
+const contributionData = ref<{ date: string; count: number }[]>([])
+function generateContributionData() {
+  const data: { date: string; count: number }[] = []
+  const today = new Date()
+  for (let i = 111; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const dateStr = `${d.getMonth() + 1}/${d.getDate()}`
+    data.push({ date: dateStr, count: Math.floor(Math.random() * 5) })
+  }
+  contributionData.value = data
+}
+generateContributionData()
+
+// 历史文件
+const uploadedFiles = ref<{ name: string; time: string }[]>([])
 
 // 退出登录确认
 const showLogoutDialog = ref(false)
@@ -190,12 +266,12 @@ function onLoggedIn(user: AuthUser) {
 
 /* ===== 深色主题变量（灰底微暖调） ===== */
 [data-theme="dark"] {
-  --bg-primary: #352e28;
-  --bg-secondary: rgba(53, 46, 40, 0.6);
-  --bg-card: rgba(65, 55, 48, 0.5);
-  --bg-input: rgba(65, 55, 48, 0.6);
+  --bg-primary: #322c28;
+  --bg-secondary: rgba(50, 44, 40, 0.6);
+  --bg-card: rgba(60, 52, 46, 0.5);
+  --bg-input: rgba(60, 52, 46, 0.6);
   --bg-hover: var(--accent-hover);
-  --bg-plan: rgba(65, 55, 48, 0.4);
+  --bg-plan: rgba(60, 52, 46, 0.4);
   --text-primary: #ece6e0;
   --text-secondary: #b8aea5;
   --text-muted: #988e85;
@@ -269,7 +345,26 @@ input:-webkit-autofill:active {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
+}
+
+.header-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+
+.header-tab-btn:hover {
+  color: var(--text-secondary);
+}
+
+.header-tab-btn.active {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .header-right {
@@ -278,7 +373,7 @@ input:-webkit-autofill:active {
 }
 
 .app-header h1 {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--accent);
 }
@@ -384,4 +479,99 @@ input:-webkit-autofill:active {
   background: var(--danger);
 }
 
+/* ===== 学习数据 / 历史文件 面板 ===== */
+.overlay-panel {
+  position: fixed;
+  top: 64px;
+  bottom: auto;
+  left: 16px;
+  z-index: 1001;
+  width: clamp(226px, calc(21vw - 24px), 320px);
+  background: var(--bg-primary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: none;
+}
+
+/* 贡献图 */
+.graph-header, .file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.graph-title, .file-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.graph-subtitle, .file-subtitle {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.graph-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 3px;
+}
+.graph-cell {
+  aspect-ratio: 1;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.graph-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.legend-cell {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* 历史文件 */
+.file-empty {
+  text-align: center;
+  color: var(--text-placeholder);
+  font-size: 13px;
+  padding: 20px 0;
+}
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.file-item:hover {
+  background: var(--bg-hover);
+}
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-time {
+  font-size: 11px;
+  color: var(--text-faint);
+}
 </style>

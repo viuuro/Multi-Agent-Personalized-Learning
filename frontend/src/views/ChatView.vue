@@ -52,29 +52,32 @@
 
         <!-- 学习计划内容 -->
         <div class="tab-content plan-tab-content">
-          <div v-if="!planHasData" class="plan-empty-state">
-            <button class="submit-file-btn" @click="handleGeneratePlan" :disabled="planLoading">
-              <el-icon :size="14"><Loading v-if="planLoading" /><Plus v-else /></el-icon>
-              <span>{{ planLoading ? '生成中...' : '生成学习计划' }}</span>
-            </button>
+          <div class="plan-section-header">
+            <span class="plan-section-title">计划与成果</span>
+            <div class="plan-section-actions">
+              <div v-if="planHasData" class="plan-header-btns">
+                <button class="expand-plan-btn" aria-label="编辑学习计划" @click="showEditModal = true">
+                  <UiIcon name="edit" />
+                </button>
+                <button class="expand-plan-btn" aria-label="展开学习计划" @click="showExpandModal = true">
+                  <UiIcon name="expand" />
+                </button>
+              </div>
+              <button class="expand-plan-btn generate-plan-btn" @click="handleGeneratePlan" :disabled="planLoading">
+              <span>{{ planLoading ? '生成中...' : (planHasData ? '重新生成' : '生成学习计划') }}</span>
+              </button>
+            </div>
           </div>
 
           <PlanCard ref="planCardRef" />
-
-          <div v-if="planHasData" class="plan-header-btns">
-            <button class="expand-plan-btn" @click="showEditModal = true">
-              <el-icon><Edit /></el-icon>
-            </button>
-            <button class="expand-plan-btn" @click="showExpandModal = true">
-              <el-icon><FullScreen /></el-icon>
-            </button>
-          </div>
 
           <!-- 评分结果显示 -->
           <div v-if="evaluationResult" class="evaluation-result">
             <div class="eval-header">
               <span class="eval-score">{{ evaluationResult.score }} 分</span>
-              <button class="eval-close" @click="evaluationResult = null">&times;</button>
+              <button class="eval-close" aria-label="关闭评分结果" @click="evaluationResult = null">
+                <UiIcon name="close" />
+              </button>
             </div>
             <p class="eval-analysis">{{ evaluationResult.analysis }}</p>
             <p class="eval-suggestion">{{ evaluationResult.suggestion }}</p>
@@ -90,7 +93,7 @@
       :style="{ top: submissionCenterY ? `${submissionCenterY}px` : '72%' }"
     >
       <button class="submit-file-btn" @click="handleSubmissionUpload" :disabled="submitting">
-        <el-icon :size="14"><Upload /></el-icon>
+        <UiIcon name="upload" />
         <span>{{ submitting ? 'AI评分中...' : '提交学习成果' }}</span>
       </button>
     </div>
@@ -104,9 +107,7 @@
       aria-label="切换学习计划侧边栏"
       @click="sidebarOpen = !sidebarOpen"
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="m8 5 5 5-5 5" />
-      </svg>
+      <UiIcon name="chevron-right" />
     </button>
 
     <div class="chat-panel">
@@ -139,38 +140,29 @@
               <!-- 图片预览 -->
               <div v-if="stagedImage" class="staged-preview-item">
                 <img :src="stagedImage.previewUrl" alt="preview" />
-                <button class="staged-remove" @click="clearStagedImage">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                  </svg>
+                <button class="staged-remove" aria-label="移除图片" @click="clearStagedImage">
+                  <UiIcon name="close" />
                 </button>
               </div>
               <!-- 文件预览 -->
               <div v-if="stagedFile" class="staged-file-item">
                 <div class="file-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D4916F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                  </svg>
+                  <UiIcon name="file" />
                 </div>
                 <div class="file-info">
                   <span class="file-name">{{ stagedFile.name }}</span>
                   <span class="file-size">{{ stagedFile.size }}</span>
                 </div>
-                <button class="staged-remove" @click="clearStagedFile">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                  </svg>
+                <button class="staged-remove" aria-label="移除文件" @click="clearStagedFile">
+                  <UiIcon name="close" />
                 </button>
               </div>
             </div>
           </transition>
           <div ref="capsuleBarRef" class="capsule-bar">
-            <!-- + 按钮（左下角，圆形，与发送按钮风格一致） -->
-            <button class="plus-btn" @click.stop="showPlusMenu = !showPlusMenu">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
+            <!-- + 按钮 -->
+            <button class="plus-btn" type="button" aria-label="添加图片或文件" @click.stop="showPlusMenu = !showPlusMenu">
+              <UiIcon name="plus" />
             </button>
             <textarea
               ref="inputRef"
@@ -186,27 +178,21 @@
               :disabled="(!inputText.trim() && !stagedImage && !stagedFile) || chatStore.isStreaming"
               @click="handleSend"
               class="capsule-send"
-            >发送</button>
+              type="button"
+              aria-label="发送"
+            >
+              <UiIcon name="send" />
+            </button>
           </div>
           <!-- + 按钮下拉菜单（与汉堡菜单样式一致） -->
           <transition name="plus-menu-drop">
             <div v-if="showPlusMenu" class="plus-menu" @click.stop>
               <div class="plus-menu-item" @click="handleImageUpload">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7A6A60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  <circle cx="8.5" cy="8.5" r="1.5"/>
-                  <polyline points="21 15 16 10 5 21"/>
-                </svg>
+                <UiIcon name="image" />
                 <span>图片</span>
               </div>
               <div class="plus-menu-item" @click="handleFileUpload">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7A6A60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="16" y1="13" x2="8" y2="13"/>
-                  <line x1="16" y1="17" x2="8" y2="17"/>
-                  <polyline points="10 9 9 9 8 9"/>
-                </svg>
+                <UiIcon name="file" />
                 <span>文件</span>
               </div>
             </div>
@@ -257,14 +243,16 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { FullScreen, Edit, Loading, Picture, Document, Upload } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
 import { sendMessage } from '../services/sse'
-import { fetchProfile, parseFileApi, fetchConversationsApi, fetchSavedPlanApi } from '../services/api'
+import { fetchProfile, parseFileApi, fetchSavedPlanApi, generateConversationTitleApi } from '../services/api'
+import type { LearningPlan } from '../services/api'
+import { fallbackConversationTitle, readConversationTitles, saveConversationTitle } from '../services/conversationTitles'
 import RadarChart from '../components/RadarChart.vue'
 import PlanCard from '../components/PlanCard.vue'
+import UiIcon from '../components/UiIcon.vue'
 import MessageBubble from '../components/MessageBubble.vue'
 
 const chatStore = useChatStore()
@@ -489,6 +477,7 @@ async function handleSubmissionFileSelected(e: Event) {
     const subResult = await submissionRes.json()
     if (subResult.code !== 200) throw new Error(subResult.message || '提交失败')
     const submissionId = subResult.data.submissionId
+    window.dispatchEvent(new Event('learning-activity-updated'))
 
     // 3. 轮询获取 AI 评分结果
     let retries = 10
@@ -502,6 +491,7 @@ async function handleSubmissionFileSelected(e: Event) {
           analysis: evalData.data.evaluation.analysis,
           suggestion: evalData.data.evaluation.suggestion,
         }
+        window.dispatchEvent(new Event('learning-activity-updated'))
         break
       }
       retries--
@@ -561,12 +551,7 @@ watch(
         profileStore.resetProfile()
         planHasData.value = false
       }
-      setTimeout(async () => {
-        try { const profile = await fetchProfile(userId!); profileStore.setProfile(profile); lastLoadedUserId = userId! } catch {}
-        try { const history = await fetchConversationsApi(userId!); if (history.length > 0) { chatStore.clearMessages(); for (const msg of history) { chatStore.addMessage({ id: msg.id.toString(), role: msg.role as 'user' | 'assistant', content: msg.content, timestamp: new Date(msg.timestamp).getTime() }) } } } catch {}
-        try { const savedPlan = await fetchSavedPlanApi(userId!); if (savedPlan && savedPlan.weeks && savedPlan.weeks.length > 0) { planHasData.value = true; nextTick(() => { planCardRef.value?.setPlan(savedPlan) }) } } catch {}
-        if (chatStore.messages.length === 0) streamGreeting(getGreeting())
-      }, 400)
+      lastLoadedUserId = userId || null
     } else {
       chatStore.clearMessages()
       profileStore.resetProfile()
@@ -606,6 +591,122 @@ function closePlusMenu() {
   showPlusMenu.value = false
 }
 
+const titledMessageCounts = new Map<string, number>()
+let titleAnalysisTimer: ReturnType<typeof setTimeout> | null = null
+
+function buildConversationTitleContext() {
+  return chatStore.messages
+    .filter(message => message.role === 'user' || message.role === 'assistant')
+    .slice(-30)
+    .map(message => `${message.role === 'user' ? '用户' : '智能体'}：${message.content}`)
+    .join('\n')
+    .slice(-10000)
+}
+
+async function analyzeConversationTitle(conversationId: string, messageCount: number) {
+  const context = buildConversationTitleContext()
+  if (!context || !chatStore.messages.some(message => message.role === 'user')) return
+  let title = fallbackConversationTitle(chatStore.messages)
+  try {
+    title = await generateConversationTitleApi(context)
+  } catch (err) {
+    console.warn('会话标题分析失败，已使用本地简化标题', err)
+  }
+  const userId = authStore.user?.id
+  if (userId) saveConversationTitle(userId, conversationId, title)
+  titledMessageCounts.set(conversationId, messageCount)
+  if (chatStore.conversationId === conversationId) {
+    chatStore.setConversationTitle(title)
+  }
+  window.dispatchEvent(new CustomEvent('conversation-title-updated', {
+    detail: { conversationId, title },
+  }))
+}
+
+watch(
+  () => [chatStore.conversationId, chatStore.messages.length, chatStore.isStreaming] as const,
+  ([conversationId, messageCount, streaming]) => {
+    if (!conversationId || streaming || messageCount < 2) return
+    const previousCount = titledMessageCounts.get(conversationId)
+    if (previousCount === undefined) {
+      const userId = authStore.user?.id
+      const savedTitle = userId ? readConversationTitles(userId)[conversationId] : ''
+      if (savedTitle) {
+        titledMessageCounts.set(conversationId, messageCount)
+        chatStore.setConversationTitle(savedTitle)
+        return
+      }
+    } else if (messageCount - previousCount < 6) {
+      return
+    }
+
+    if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
+    titleAnalysisTimer = setTimeout(() => {
+      void analyzeConversationTitle(conversationId, messageCount)
+    }, 900)
+  },
+  { immediate: true }
+)
+
+let workspaceLoadVersion = 0
+
+async function loadConversationWorkspace(conversationId: string) {
+  const userId = authStore.user?.id
+  if (!userId || !conversationId) return
+  const version = ++workspaceLoadVersion
+  profileStore.resetProfile()
+  planHasData.value = false
+  planCardRef.value?.setPlan(null)
+
+  try {
+    const profile = await fetchProfile(userId, conversationId)
+    if (version === workspaceLoadVersion && chatStore.conversationId === conversationId) {
+      profileStore.setProfile(profile)
+    }
+  } catch (err) {
+    console.warn('对话画像加载失败', err)
+  }
+
+  try {
+    const savedPlan = await fetchSavedPlanApi(userId, conversationId)
+    if (version !== workspaceLoadVersion || chatStore.conversationId !== conversationId) return
+    if (savedPlan?.weeks?.length) {
+      planHasData.value = true
+      nextTick(() => planCardRef.value?.setPlan(savedPlan))
+    }
+  } catch (err) {
+    console.warn('对话计划加载失败', err)
+  }
+}
+
+function handleNewConversation(event: Event) {
+  if (chatStore.isStreaming) return
+  const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
+  if (!conversationId) return
+  workspaceLoadVersion++
+  chatStore.clearMessages()
+  chatStore.setConversationId(conversationId)
+  profileStore.resetProfile()
+  planHasData.value = false
+  planCardRef.value?.setPlan(null)
+  evaluationResult.value = null
+  streamGreeting(getGreeting())
+}
+
+function handleConversationSelected(event: Event) {
+  const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
+  if (!conversationId) return
+  evaluationResult.value = null
+  void loadConversationWorkspace(conversationId)
+}
+
+function handleLearningPlanUpdated(event: Event) {
+  const plan = (event as CustomEvent<LearningPlan>).detail
+  if (!plan?.weeks?.length) return
+  planHasData.value = true
+  nextTick(() => planCardRef.value?.setPlan(plan))
+}
+
 onMounted(() => {
   messageListRef.value?.addEventListener('scroll', handleMsgScroll)
   document.addEventListener('click', closePlusMenu)
@@ -613,6 +714,9 @@ onMounted(() => {
   if (chatViewRef.value) alignmentObserver.observe(chatViewRef.value)
   if (capsuleBarRef.value) alignmentObserver.observe(capsuleBarRef.value)
   window.addEventListener('resize', syncSubmissionCenter)
+  window.addEventListener('learning-plan-updated', handleLearningPlanUpdated)
+  window.addEventListener('new-conversation', handleNewConversation)
+  window.addEventListener('conversation-selected', handleConversationSelected)
   nextTick(syncSubmissionCenter)
 })
 
@@ -620,9 +724,13 @@ onUnmounted(() => {
   messageListRef.value?.removeEventListener('scroll', handleMsgScroll)
   document.removeEventListener('click', closePlusMenu)
   window.removeEventListener('resize', syncSubmissionCenter)
+  window.removeEventListener('learning-plan-updated', handleLearningPlanUpdated)
+  window.removeEventListener('new-conversation', handleNewConversation)
+  window.removeEventListener('conversation-selected', handleConversationSelected)
   alignmentObserver?.disconnect()
   if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
   if (scrollTimer) clearTimeout(scrollTimer)
+  if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
 })
 
 watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
@@ -714,6 +822,7 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   color: var(--accent);
 }
 .submit-file-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.submit-file-btn .ui-icon { width: 16px; height: 16px; }
 
 /* 评分结果显示 */
 .evaluation-result {
@@ -728,7 +837,9 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 }
 .eval-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .eval-score { font-size: 22px; font-weight: 700; color: var(--accent); }
-.eval-close { border: none; background: none; font-size: 20px; color: var(--text-faint); cursor: pointer; }
+.eval-close { width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--text-faint); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.eval-close:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.eval-close .ui-icon { width: 16px; height: 16px; }
 .eval-analysis { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 8px; }
 .eval-suggestion { font-size: 13px; color: var(--accent); line-height: 1.6; background: var(--accent-hover); padding: 10px 14px; border-radius: 10px; margin: 0; }
 
@@ -758,15 +869,18 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 .input-area { position: relative; z-index: 5; padding: 12px 16px 0; background: transparent; flex-shrink: 0; margin-bottom: 16px; }
 .capsule-bar { display: flex; align-items: flex-end; background: var(--bg-input); backdrop-filter: blur(20px) saturate(1.3); -webkit-backdrop-filter: blur(20px) saturate(1.3); border: 1px solid var(--border-solid); border-radius: 16px; padding: 4px 4px 4px 4px; box-shadow: var(--shadow-card); }
-.plus-btn { flex-shrink: 0; width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; margin-right: 8px; }
+.plus-btn { flex-shrink: 0; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-right: 8px; }
+.plus-btn .ui-icon { width: 19px; height: 19px; }
 .plus-btn:hover { background: transparent; border: 1px solid var(--border-solid); }
 .staged-preview { display: flex; padding: 0 0 8px 0; gap: 8px; }
 .staged-preview-item { position: relative; width: 72px; height: 72px; border-radius: 12px; overflow: hidden; border: 2px solid var(--border-solid); background: var(--bg-card); }
 .staged-preview-item img { width: 100%; height: 100%; object-fit: cover; }
 .staged-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border: none; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: background 0.2s; }
 .staged-remove:hover { background: rgba(0,0,0,0.75); }
+.staged-remove .ui-icon { width: 12px; height: 12px; }
 .staged-file-item { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px 32px 8px 10px; border-radius: 12px; border: 2px solid var(--border-solid); background: var(--bg-card); max-width: 240px; }
-.file-icon { flex-shrink: 0; }
+.file-icon { flex-shrink: 0; color: var(--accent); }
+.file-icon .ui-icon { width: 24px; height: 24px; }
 .file-info { display: flex; flex-direction: column; min-width: 0; }
 .file-name { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-size { font-size: 11px; color: var(--text-faint); }
@@ -775,6 +889,7 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 .preview-slide-enter-from, .preview-slide-leave-to { opacity: 0; transform: translateY(6px); }
 .plus-menu { position: absolute; bottom: calc(100% + 8px); left: 16px; min-width: 140px; background: var(--bg-primary); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 14px; box-shadow: var(--shadow-card); overflow: hidden; z-index: 1100; border: 1px solid var(--border-solid); }
 .plus-menu-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; transition: background 0.2s; }
+.plus-menu-item .ui-icon { width: 18px; height: 18px; }
 .plus-menu-item:hover { background: var(--accent-hover); }
 .plus-menu-drop-enter-active, .plus-menu-drop-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .plus-menu-drop-enter-from, .plus-menu-drop-leave-to { opacity: 0; transform: translateY(6px); }
@@ -782,7 +897,8 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 .capsule-input::-webkit-scrollbar { width: 3px; }
 .capsule-input::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 .capsule-input::placeholder { color: var(--text-placeholder); }
-.capsule-send { flex-shrink: 0; padding: 8px 20px; margin-right: 1px; border: none; border-radius: 12px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; transition: opacity 0.2s; }
+.capsule-send { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; margin-right: 1px; border: none; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; transition: opacity 0.2s; }
+.capsule-send .ui-icon { width: 19px; height: 19px; }
 .capsule-send:disabled { opacity: 0.5; cursor: not-allowed; }
 .capsule-send:not(:disabled):hover { opacity: 0.85; }
 .expand-plan-content { max-height: 65vh; overflow-y: auto; }
@@ -887,14 +1003,7 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   overflow: hidden;
 }
 .left-panel .plan-tab-content::before {
-  content: '计划与成果';
-  position: absolute;
-  top: 25px;
-  left: 21.5%;
-  transform: translateX(-50%);
-  color: var(--text-secondary);
-  font-size: 16px;
-  font-weight: 700;
+  content: none;
 }
 .left-panel .plan-tab-content::after {
   content: '';
@@ -905,10 +1014,6 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   gap: 2px;
 }
 .plan-header-btns {
-  position: absolute;
-  top: 22px;
-  right: 16px;
-  z-index: 10;
   display: flex;
   gap: 4px;
 }
@@ -930,7 +1035,7 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 .expand-plan-btn:hover {
   background: var(--bg-hover);
 }
-.left-panel .plan-empty-state { padding: 70px 12px 28px; }
+.expand-plan-btn .ui-icon { width: 17px; height: 17px; }
 .left-panel .plan-footer { flex-wrap: wrap; }
 .left-panel .submit-file-btn {
   width: 100%;
@@ -965,7 +1070,7 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   padding: 0;
 }
 .sidebar-toggle:hover { background: var(--bg-hover); }
-.sidebar-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.sidebar-toggle .ui-icon { width: 15px; height: 15px; }
 .chat-view.sidebar-closed .sidebar-toggle { transform: rotate(180deg); }
 .chat-view.sidebar-closed .plan-tab-content {
   opacity: 0;
@@ -1002,6 +1107,10 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 }
 .left-panel .profile-content {
   flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   margin: 0;
   padding: 8px 12px 4px;
   overflow: visible;
@@ -1027,29 +1136,30 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   width: calc(100% - 8px);
   margin: 0 auto;
   padding: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
 }
 .left-panel .summary-row {
   min-height: 0;
   display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  padding: 5px 7px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
   text-align: left;
   border-radius: 10px;
   background: var(--ai-bubble-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: inset 0 0 0 1px var(--border-solid);
+  border: 1px solid var(--border-solid);
+  box-shadow: none;
 }
 .left-panel .summary-row:nth-child(n + 3) {
   grid-column: 1 / -1;
 }
 .left-panel .summary-row .label {
-  flex: 0 0 auto;
-  width: auto;
-  margin: 1px 0 0;
+  flex: 0 0 32px;
+  width: 32px;
+  margin: 0;
   font-size: 11px;
   line-height: 1.35;
   color: var(--text-faint);
@@ -1074,6 +1184,58 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
   padding: 58px 16px 16px;
   overflow-y: auto;
   background: transparent;
+}
+.plan-section-header {
+  position: absolute;
+  top: 20px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+.plan-section-title {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.plan-section-actions {
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.generate-plan-btn {
+  width: auto;
+  min-width: 88px;
+  height: 32px;
+  margin: 0;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+.generate-plan-btn span {
+  display: block;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  line-height: 1;
+  text-align: center;
+}
+.generate-plan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .chat-panel {
   grid-column: 2;
@@ -1138,8 +1300,22 @@ watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
 .el-dialog { background: var(--bg-primary) !important; backdrop-filter: blur(20px) !important; -webkit-backdrop-filter: blur(20px) !important; border-radius: 20px !important; transform: translateX(160px); }
 .el-dialog__header, .el-dialog__body { background: transparent !important; }
 .el-dialog__title { color: var(--text-secondary) !important; padding-left: 6px; }
-.el-dialog__headerbtn .el-icon { color: var(--text-muted) !important; }
-.el-dialog__headerbtn:hover .el-icon { color: var(--text-muted) !important; background: transparent !important; }
+.el-dialog__headerbtn { color: var(--text-muted) !important; }
+.el-dialog__headerbtn .el-dialog__close { display: none !important; }
+.el-dialog__headerbtn::before,
+.el-dialog__headerbtn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 15px;
+  height: 1.3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.el-dialog__headerbtn::before { transform: translate(-50%, -50%) rotate(45deg); }
+.el-dialog__headerbtn::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.el-dialog__headerbtn:hover { color: var(--text-secondary) !important; background: transparent !important; }
 .edit-modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
 .save-btn.el-button--primary { background: var(--accent) !important; border-color: var(--accent) !important; }
 .save-btn.el-button--primary:hover { background: var(--accent-dark) !important; border-color: var(--accent-dark) !important; }

@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 /**
  * 对话记录数据访问层
@@ -33,4 +34,12 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
      */
     @Query(value = "SELECT * FROM conversation WHERE user_id = :userId ORDER BY timestamp DESC LIMIT :limit", nativeQuery = true)
     List<Conversation> findLatestByUserId(@Param("userId") Long userId, @Param("limit") int limit);
+
+    /** 查询指定对话的完整消息，按时间倒序。 */
+    List<Conversation> findByUserIdAndConversationIdOrderByTimestampDesc(
+            Long userId, String conversationId);
+
+    /** 统计时间区间内的用户对话消息（不包含智能体回复）。 */
+    List<Conversation> findByUserIdAndRoleAndTimestampBetween(
+            Long userId, String role, LocalDateTime start, LocalDateTime end);
 }

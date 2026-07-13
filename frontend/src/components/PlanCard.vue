@@ -17,14 +17,14 @@
             <div class="edit-section">
               <div class="edit-section-header">
                 <span>任务</span>
-                <el-button class="add-btn" size="small" text @click="addTask(wi)">
-                  <el-icon><Plus /></el-icon>
+                <el-button class="add-btn" size="small" text aria-label="添加任务" @click="addTask(wi)">
+                  <UiIcon name="plus" />
                 </el-button>
               </div>
               <div v-for="(task, ti) in week.tasks" :key="ti" class="edit-item">
                 <el-input v-model="week.tasks[ti]" size="small" placeholder="任务描述" />
-                <el-button class="delete-btn" size="small" text @click="removeTask(wi, ti)">
-                  <el-icon><Delete /></el-icon>
+                <el-button class="delete-btn" size="small" text aria-label="删除任务" @click="removeTask(wi, ti)">
+                  <UiIcon name="delete" />
                 </el-button>
               </div>
             </div>
@@ -32,16 +32,16 @@
             <div class="edit-section">
               <div class="edit-section-header">
                 <span>资源</span>
-                <el-button class="add-btn" size="small" text @click="addResource(wi)">
-                  <el-icon><Plus /></el-icon>
+                <el-button class="add-btn" size="small" text aria-label="添加资源" @click="addResource(wi)">
+                  <UiIcon name="plus" />
                 </el-button>
               </div>
               <div v-for="(res, ri) in week.resources" :key="ri" class="edit-resource">
                 <el-input v-model="res.title" size="small" placeholder="资源标题" />
                 <el-input v-model="res.url" size="small" placeholder="URL" />
                 <el-input v-model="res.platform" size="small" placeholder="平台" style="width:80px" />
-                <el-button class="delete-btn" size="small" text @click="removeResource(wi, ri)">
-                  <el-icon><Delete /></el-icon>
+                <el-button class="delete-btn" size="small" text aria-label="删除资源" @click="removeResource(wi, ri)">
+                  <UiIcon name="delete" />
                 </el-button>
               </div>
             </div>
@@ -57,7 +57,7 @@
             <h4>本周任务</h4>
             <ul class="task-list">
               <li v-for="(task, i) in week.tasks" :key="i">
-                <el-icon :size="14"><Check /></el-icon>
+                <UiIcon name="check" />
                 {{ task }}
               </li>
             </ul>
@@ -74,7 +74,7 @@
                   {{ res.platform }}
                 </el-tag>
                 <span class="resource-title">{{ res.title }}</span>
-                <el-icon :size="12"><Link /></el-icon>
+                <UiIcon name="link" />
               </a>
             </div>
           </div>
@@ -96,14 +96,14 @@
           <template #reference>
             <div class="week-row">
               <span class="week-label">第 {{ week.weekNumber }} 周：{{ week.topic }}</span>
-              <el-icon class="week-arrow"><ArrowRight /></el-icon>
+              <UiIcon class="week-arrow" name="chevron-right" />
             </div>
           </template>
           <div class="popover-content">
             <h4>本周任务</h4>
             <ul class="task-list">
               <li v-for="(task, i) in week.tasks" :key="i">
-                <el-icon :size="14"><Check /></el-icon>
+                <UiIcon name="check" />
                 {{ task }}
               </li>
             </ul>
@@ -120,7 +120,7 @@
                   {{ res.platform }}
                 </el-tag>
                 <span class="resource-title">{{ res.title }}</span>
-                <el-icon :size="12"><Link /></el-icon>
+                <UiIcon name="link" />
               </a>
             </div>
           </div>
@@ -135,12 +135,14 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { Check, Link, Plus, Delete, ArrowRight } from '@element-plus/icons-vue'
 import { fetchPlan, savePlanApi } from '../services/api'
 import type { LearningPlan } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import { useChatStore } from '../stores/chatStore'
+import UiIcon from './UiIcon.vue'
 
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 const props = defineProps<{
   planData?: LearningPlan | null
@@ -160,8 +162,8 @@ const editablePlan = ref<LearningPlan | null>(null)
 
 const hasPlan = computed(() => plan.value !== null)
 
-function setPlan(newPlan: LearningPlan) {
-  internalPlan.value = JSON.parse(JSON.stringify(newPlan))
+function setPlan(newPlan: LearningPlan | null) {
+  internalPlan.value = newPlan ? JSON.parse(JSON.stringify(newPlan)) : null
 }
 
 onMounted(() => {
@@ -172,8 +174,9 @@ async function generatePlan() {
   loading.value = true
   try {
     const userId = authStore.user?.id
-    if (!userId) throw new Error('未登录')
-    internalPlan.value = await fetchPlan(userId)
+    const conversationId = chatStore.conversationId
+    if (!userId || !conversationId) throw new Error('未登录或当前对话未初始化')
+    internalPlan.value = await fetchPlan(userId, conversationId)
   } catch (err) {
     console.error('计划生成失败:', err)
   } finally {
@@ -191,9 +194,10 @@ async function saveEdit() {
     internalPlan.value = JSON.parse(JSON.stringify(editablePlan.value)) as LearningPlan
     // 持久化到后端
     const userId = authStore.user?.id
-    if (userId) {
+    const conversationId = chatStore.conversationId
+    if (userId && conversationId) {
       try {
-        await savePlanApi(userId, internalPlan.value)
+        await savePlanApi(userId, conversationId, internalPlan.value)
       } catch (e) {
         console.warn('计划保存失败:', e)
       }
@@ -263,6 +267,11 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   border-color: var(--border-solid) !important;
   background: transparent !important;
   color: var(--text-faint) !important;
+}
+.add-btn .ui-icon,
+.delete-btn .ui-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .delete-btn {
@@ -376,6 +385,8 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 }
 
 .week-arrow {
+  width: 14px;
+  height: 14px;
   color: var(--text-faint);
   flex-shrink: 0;
   margin-left: 4px;
@@ -411,7 +422,9 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   line-height: 1.4;
 }
 
-.task-list li .el-icon {
+.task-list li .ui-icon {
+  width: 14px;
+  height: 14px;
   color: #67c23a;
   margin-top: 2px;
   flex-shrink: 0;
@@ -442,6 +455,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 .resource-link:hover {
   background: var(--bg-hover);
 }
+.resource-link .ui-icon { width: 13px; height: 13px; }
 
 .resource-title {
   flex: 1;

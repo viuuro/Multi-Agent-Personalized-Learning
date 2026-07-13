@@ -93,4 +93,13 @@ public class ChatController {
         Collections.reverse(messages);
         return ApiResponse.success("ok", messages);
     }
+
+    /** POST /api/conversations/title —— 基于当前会话的整体内容生成简短标题。 */
+    @PostMapping("/conversations/title")
+    public ApiResponse<Map<String, String>> generateConversationTitle(
+            @RequestBody Map<String, Object> body) {
+        String context = String.valueOf(body.getOrDefault("conversationContext", ""));
+        String title = chatService.generateConversationTitle(context);
+        return ApiResponse.success("ok", Map.of("title", title));
+    }
 }

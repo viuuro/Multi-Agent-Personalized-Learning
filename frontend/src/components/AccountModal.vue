@@ -20,7 +20,8 @@
             {{ authStore.user?.username?.charAt(0)?.toUpperCase() || 'U' }}
           </el-avatar>
           <el-button class="choose-avatar-btn" size="small" text @click="triggerFileInput">
-            <el-icon style="margin-right:4px"><RefreshRight /></el-icon>更换
+            <UiIcon name="refresh" />
+            <span>更换</span>
           </el-button>
           <input
             ref="fileInputRef"
@@ -65,9 +66,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RefreshRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/authStore'
 import { updateProfileApi } from '../services/api'
+import UiIcon from './UiIcon.vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -186,10 +187,12 @@ function handleClose() {
 }
 
 .choose-avatar-btn {
+  gap: 4px;
   color: var(--accent) !important;
   border: 1px solid transparent !important;
   transition: border-color 0.2s;
 }
+.choose-avatar-btn .ui-icon { width: 15px; height: 15px; }
 .choose-avatar-btn:hover,
 .choose-avatar-btn:focus,
 .choose-avatar-btn:active {

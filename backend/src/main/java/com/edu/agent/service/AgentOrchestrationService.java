@@ -75,13 +75,13 @@ public class AgentOrchestrationService {
     /** 【Spring Boot】构造器注入 —— Spring 自动装配所有依赖 */
     public AgentOrchestrationService(ProfileService profileService,
                                      MockAiService mockAiService,
-                                     ConversationRepository conversationRepository) {
+                                     ConversationRepository conversationRepository,
+                                     @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.profileService = profileService;
         this.mockAiService = mockAiService;
         this.conversationRepository = conversationRepository;
-        // 检查环境变量决定运行模式
-        String apiKey = System.getenv("MIMO_API_KEY");
-        this.mockMode = (apiKey == null || apiKey.isBlank());
+        // MiMo API Key 由 Python AI 服务持有；Spring 仅在显式开启时使用 Mock。
+        this.mockMode = mockMode;
         log.info(">>> AgentOrchestrationService 初始化完成，模式: {}", mockMode ? "MOCK" : "REAL (Python AI → MiMo-v2.5)");
     }
 
@@ -94,11 +94,17 @@ public class AgentOrchestrationService {
      *
      * @return LearningPlan 包含 4 周计划的完整学习计划对象
      */
-    public LearningPlan generatePlan(Long userId) {
+    public LearningPlan generatePlan(Long userId, String conversationId) {
+        return generatePlan(userId, conversationId, "", "");
+    }
+
+    /** 根据当前计划和用户最新要求生成修订版计划。 */
+    public LearningPlan generatePlan(Long userId, String conversationId,
+                                     String existingPlanJson, String revisionRequest) {
         if (mockMode) {
-            return generatePlanMock(userId);
+            return generatePlanMock(userId, conversationId);
         }
-        return generatePlanReal(userId);
+        return generatePlanReal(userId, conversationId, existingPlanJson, revisionRequest);
     }
 
     /**
@@ -113,20 +119,23 @@ public class AgentOrchestrationService {
      *
      * @return LearningPlan 包含 4 周计划的完整学习计划对象
      */
-    private LearningPlan generatePlanReal(Long userId) {
+    private LearningPlan generatePlanReal(Long userId, String conversationId,
+                                          String existingPlanJson, String revisionRequest) {
         log.info("========== 多智能体协同开始 (Python AI) ==========");
         // 获取当前用户画像
-        UserProfile profile = profileService.getCurrentProfile(userId);
+        UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
 
         // 获取用户最近的对话记录作为上下文（取最近 20 条用户消息）
-        String conversationContext = buildConversationContext(userId);
+        String conversationContext = buildConversationContext(userId, conversationId);
 
         try {
             // 构造请求体（画像 + 对话上下文）
             Map<String, Object> body = Map.of(
                     "profile_json", profile.getProfileJson() != null
                             ? profile.getProfileJson() : "",
-                    "conversation_context", conversationContext
+                    "conversation_context", conversationContext,
+                    "existing_plan_json", existingPlanJson != null ? existingPlanJson : "",
+                    "revision_request", revisionRequest != null ? revisionRequest : ""
             );
             String json = objectMapper.writeValueAsString(body);
 
@@ -185,15 +194,15 @@ public class AgentOrchestrationService {
                 return plan;
             } else {
                 log.error("Python AI /plan 返回错误: {} {}", httpResponse.statusCode(), httpResponse.body());
-                return generatePlanMock(userId);
+                return generatePlanMock(userId, conversationId);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Python AI /plan 调用中断，降级到 Mock", e);
-            return generatePlanMock(userId);
+            return generatePlanMock(userId, conversationId);
         } catch (Exception e) {
             log.error("Python AI /plan 调用失败，降级到 Mock: {}", e.getMessage());
-            return generatePlanMock(userId);
+            return generatePlanMock(userId, conversationId);
         }
     }
 
@@ -205,10 +214,10 @@ public class AgentOrchestrationService {
      *
      * @return LearningPlan Mock 学习计划
      */
-    public LearningPlan generatePlanMock(Long userId) {
+    public LearningPlan generatePlanMock(Long userId, String conversationId) {
         log.info("========== 多智能体协同 (Mock 模式) ==========");
         // 获取当前用户画像
-        UserProfile profile = profileService.getCurrentProfile(userId);
+        UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
 
         log.info(">>> Step 1: 计划生成 (Mock) —— 正在根据画像生成计划");
         log.info("    画像数据: knowledgeBase={}, goal={}",
@@ -231,19 +240,19 @@ public class AgentOrchestrationService {
      * @param userId 用户 ID
      * @return 对话上下文字符串
      */
-    private String buildConversationContext(Long userId) {
+    private String buildConversationContext(Long userId, String conversationId) {
         try {
-            List<Conversation> recent = conversationRepository.findRecentByUserId(userId);
-            // 取最近 20 条用户消息（倒序的前 20 条，再反转为时间正序）
+            List<Conversation> recent = conversationRepository
+                    .findByUserIdAndConversationIdOrderByTimestampDesc(userId, conversationId);
+            // 同时保留用户问题与智能体回复，便于理解完整学习进程。
             return recent.stream()
-                    .filter(c -> "user".equals(c.getRole()))
-                    .limit(20)
+                    .limit(40)
                     .collect(Collectors.collectingAndThen(
                             Collectors.toList(),
                             list -> { java.util.Collections.reverse(list); return list; }
                     ))
                     .stream()
-                    .map(Conversation::getContent)
+                    .map(c -> ("assistant".equals(c.getRole()) ? "智能体：" : "用户：") + c.getContent())
                     .collect(Collectors.joining("\n"));
         } catch (Exception e) {
             log.warn("获取对话上下文失败: {}", e.getMessage());

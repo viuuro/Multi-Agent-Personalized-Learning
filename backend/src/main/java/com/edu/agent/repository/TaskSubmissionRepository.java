@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 /**
  * 任务提交记录数据访问层 —— 提供 task_submission 表的 CRUD 操作
@@ -77,4 +78,8 @@ public interface TaskSubmissionRepository extends JpaRepository<TaskSubmission, 
      * @param userId 用户 ID
      */
     void deleteByUserId(Long userId);
+
+    /** 查询指定时间区间内的学习成果提交。 */
+    List<TaskSubmission> findByUserIdAndSubmissionTimeBetween(
+            Long userId, LocalDateTime start, LocalDateTime end);
 }

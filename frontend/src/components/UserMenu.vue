@@ -1,12 +1,8 @@
 <template>
   <div class="user-menu-container">
     <!-- 菜单按钮 -->
-    <button class="hamburger-btn" @click.stop="showMenu = !showMenu">
-      <svg width="20" height="16" viewBox="0 0 20 16" fill="none">
-        <rect x="0" y="0" width="20" height="2" rx="1" fill="currentColor"/>
-        <rect x="0" y="7" width="20" height="2" rx="1" fill="currentColor"/>
-        <rect x="0" y="14" width="20" height="2" rx="1" fill="currentColor"/>
-      </svg>
+    <button class="hamburger-btn" aria-label="打开用户菜单" @click.stop="showMenu = !showMenu">
+      <UiIcon name="menu" />
     </button>
 
     <!-- 下拉菜单 -->
@@ -14,23 +10,19 @@
       <div v-if="showMenu" class="menu-dropdown" @click.stop>
         <!-- 主题切换 -->
         <div class="menu-item theme-item" @click="themeStore.toggleMode">
-          <el-icon :size="16">
-            <Sunny v-if="themeStore.mode === 'light'" />
-            <Moon v-else-if="themeStore.mode === 'dark'" />
-            <Monitor v-else />
-          </el-icon>
+          <UiIcon :name="themeStore.mode === 'light' ? 'sun' : themeStore.mode === 'dark' ? 'moon' : 'monitor'" />
           <span>{{ themeModeLabel }}</span>
         </div>
         <div class="menu-item" @click="handleAccountManage">
-          <el-icon :size="16"><User /></el-icon>
+          <UiIcon name="user" />
           <span>账号管理</span>
         </div>
         <div class="menu-item logout-item" @click="handleLogout">
-          <el-icon :size="16"><SwitchButton /></el-icon>
+          <UiIcon name="logout" />
           <span>退出登录</span>
         </div>
         <div class="menu-item delete-item" @click="handleDeleteAccount">
-          <el-icon :size="16"><Delete /></el-icon>
+          <UiIcon name="delete" />
           <span>注销账号</span>
         </div>
       </div>
@@ -40,8 +32,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { User, SwitchButton, Delete, Moon, Sunny, Monitor } from '@element-plus/icons-vue'
 import { useThemeStore } from '../stores/themeStore'
+import UiIcon from './UiIcon.vue'
 
 const emit = defineEmits<{
   (e: 'account-manage'): void
@@ -113,6 +105,7 @@ function handleDeleteAccount() {
 .hamburger-btn:active {
   background: transparent;
 }
+.hamburger-btn .ui-icon { width: 20px; height: 20px; }
 
 .menu-dropdown {
   position: absolute;
@@ -143,6 +136,7 @@ function handleDeleteAccount() {
 .menu-item:hover {
   background: var(--bg-hover);
 }
+.menu-item .ui-icon { width: 16px; height: 16px; }
 
 .logout-item {
   color: var(--accent-dark);

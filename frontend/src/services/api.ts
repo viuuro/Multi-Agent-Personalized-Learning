@@ -46,6 +46,16 @@ export interface AuthUser {
   avatar: string
 }
 
+/** 单日真实学习活跃度 */
+export interface DailyLearningActivity {
+  date: string
+  conversationCount: number
+  submissionCount: number
+  evaluatedCount: number
+  score: number
+  level: number
+}
+
 // ========== 通用请求方法 ==========
 
 /**
@@ -70,8 +80,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<ApiRespon
  * GET /api/profile —— 获取当前用户画像
  * 页面初始化时调用，加载已有画像数据到雷达图
  */
-export async function fetchProfile(userId: number): Promise<UserProfile> {
-  const res = await request<UserProfile>(`/profile?userId=${userId}`)
+export async function fetchProfile(userId: number, conversationId: string): Promise<UserProfile> {
+  const res = await request<UserProfile>(
+    `/profile?userId=${userId}&conversationId=${encodeURIComponent(conversationId)}`
+  )
   return res.data
 }
 
@@ -79,10 +91,10 @@ export async function fetchProfile(userId: number): Promise<UserProfile> {
  * POST /api/plan —— 生成学习计划（多智能体协同）
  * 触发 PlanningAgent + ResourceAgent 协同生成 4 周计划
  */
-export async function fetchPlan(userId: number): Promise<LearningPlan> {
+export async function fetchPlan(userId: number, conversationId: string): Promise<LearningPlan> {
   const res = await request<LearningPlan>('/plan', {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId, conversationId }),
   })
   return res.data
 }
@@ -90,21 +102,36 @@ export async function fetchPlan(userId: number): Promise<LearningPlan> {
 /**
  * GET /api/plan —— 获取用户最近一次保存的学习计划
  */
-export async function fetchSavedPlanApi(userId: number): Promise<LearningPlan | null> {
-  const res = await request<LearningPlan | null>(`/plan?userId=${userId}`)
+export async function fetchSavedPlanApi(userId: number, conversationId: string): Promise<LearningPlan | null> {
+  const res = await request<LearningPlan | null>(
+    `/plan?userId=${userId}&conversationId=${encodeURIComponent(conversationId)}`
+  )
   return res.data
 }
 
 /**
  * PUT /api/plan —— 保存用户编辑后的学习计划
  */
-export async function savePlanApi(userId: number, plan: LearningPlan): Promise<LearningPlan> {
+export async function savePlanApi(
+  userId: number,
+  conversationId: string,
+  plan: LearningPlan
+): Promise<LearningPlan> {
   const res = await request<LearningPlan>('/plan', {
     method: 'PUT',
-    body: JSON.stringify({ userId, plan }),
+    body: JSON.stringify({ userId, conversationId, plan }),
   })
   if (res.code !== 200) throw new Error(res.message)
   return res.data
+}
+
+/** GET /api/activity —— 按对话和成果提交统计真实学习活跃度 */
+export async function fetchLearningActivityApi(
+  userId: number,
+  days = 112
+): Promise<DailyLearningActivity[]> {
+  const res = await request<DailyLearningActivity[]>(`/activity?userId=${userId}&days=${days}`)
+  return res.data || []
 }
 
 export async function loginApi(username: string, password: string): Promise<AuthUser> {
@@ -184,6 +211,15 @@ export interface ConversationRecord {
 export async function fetchConversationsApi(userId: number, limit = 50): Promise<ConversationRecord[]> {
   const res = await request<ConversationRecord[]>(`/conversations?userId=${userId}&limit=${limit}`)
   return res.data || []
+}
+
+/** POST /api/conversations/title —— 分析整体对话并返回简化标题 */
+export async function generateConversationTitleApi(conversationContext: string): Promise<string> {
+  const res = await request<{ title: string }>('/conversations/title', {
+    method: 'POST',
+    body: JSON.stringify({ conversationContext }),
+  })
+  return res.data?.title?.trim() || '新对话'
 }
 
 /**

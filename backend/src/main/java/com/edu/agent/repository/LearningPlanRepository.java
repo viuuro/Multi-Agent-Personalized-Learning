@@ -17,6 +17,10 @@ public interface LearningPlanRepository extends JpaRepository<LearningPlanEntity
      */
     Optional<LearningPlanEntity> findFirstByUserIdOrderByUpdatedAtDesc(Long userId);
 
+    /** 查询指定对话最近一次保存的学习计划。 */
+    Optional<LearningPlanEntity> findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+            Long userId, String conversationId);
+
     /**
      * 删除指定用户的所有学习计划
      */

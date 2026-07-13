@@ -52,9 +52,10 @@ public class ProfileController {
      *   }
      */
     @GetMapping("/profile")  // 【Spring Boot】GET 映射，返回值自动序列化为 JSON
-    public ApiResponse<UserProfile> getProfile(@RequestParam Long userId) {
-        log.info(">>> GET /api/profile, userId={}", userId);
-        UserProfile profile = profileService.getCurrentProfile(userId);
+    public ApiResponse<UserProfile> getProfile(@RequestParam Long userId,
+                                                @RequestParam String conversationId) {
+        log.info(">>> GET /api/profile, userId={}, conversationId={}", userId, conversationId);
+        UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
         return ApiResponse.success(profile);
     }
 }

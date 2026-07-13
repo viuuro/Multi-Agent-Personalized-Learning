@@ -40,21 +40,28 @@ public class PlanController {
     @PostMapping("/plan")
     public ApiResponse<LearningPlan> generatePlan(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(body.get("userId").toString());
-        log.info(">>> POST /api/plan —— 触发多智能体协同, userId={}", userId);
+        String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
+        if (conversationId.isBlank()) {
+            return ApiResponse.error(400, "缺少 conversationId");
+        }
+        log.info(">>> POST /api/plan —— 触发多智能体协同, userId={}, conversationId={}",
+                userId, conversationId);
 
-        LearningPlan plan = orchestrationService.generatePlan(userId);
+        LearningPlan plan = orchestrationService.generatePlan(userId, conversationId);
         log.info(">>> 计划生成完成。共 {} 周。", plan.getWeeks().size());
 
         // 持久化到数据库
-        savePlanToDb(userId, plan);
+        savePlanToDb(userId, conversationId, plan);
 
         return ApiResponse.success("多智能体协同完成，学习计划已生成", plan);
     }
 
     /** 读取用户最近一次计划 */
     @GetMapping("/plan")
-    public ApiResponse<LearningPlan> getPlan(@RequestParam Long userId) {
-        Optional<LearningPlanEntity> entity = planRepository.findFirstByUserIdOrderByUpdatedAtDesc(userId);
+    public ApiResponse<LearningPlan> getPlan(@RequestParam Long userId,
+                                             @RequestParam String conversationId) {
+        Optional<LearningPlanEntity> entity = planRepository
+                .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId);
         if (entity.isPresent()) {
             try {
                 LearningPlan plan = objectMapper.readValue(entity.get().getPlanJson(), LearningPlan.class);
@@ -70,18 +77,21 @@ public class PlanController {
     @PutMapping("/plan")
     public ApiResponse<LearningPlan> savePlan(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(body.get("userId").toString());
+        String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
         @SuppressWarnings("unchecked")
         Map<String, Object> planData = (Map<String, Object>) body.get("plan");
 
-        if (planData == null) {
-            return ApiResponse.error(400, "缺少 plan 数据");
+        if (planData == null || conversationId.isBlank()) {
+            return ApiResponse.error(400, "缺少 plan 数据或 conversationId");
         }
 
         try {
             String planJson = objectMapper.writeValueAsString(planData);
-            LearningPlanEntity entity = planRepository.findFirstByUserIdOrderByUpdatedAtDesc(userId)
+            LearningPlanEntity entity = planRepository
+                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
                     .orElse(new LearningPlanEntity());
             entity.setUserId(userId);
+            entity.setConversationId(conversationId);
             entity.setPlanJson(planJson);
             planRepository.save(entity);
 
@@ -94,12 +104,14 @@ public class PlanController {
     }
 
     /** 将计划存入数据库（生成后自动调用） */
-    private void savePlanToDb(Long userId, LearningPlan plan) {
+    private void savePlanToDb(Long userId, String conversationId, LearningPlan plan) {
         try {
             String planJson = objectMapper.writeValueAsString(plan);
-            LearningPlanEntity entity = planRepository.findFirstByUserIdOrderByUpdatedAtDesc(userId)
+            LearningPlanEntity entity = planRepository
+                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
                     .orElse(new LearningPlanEntity());
             entity.setUserId(userId);
+            entity.setConversationId(conversationId);
             entity.setPlanJson(planJson);
             planRepository.save(entity);
             log.info(">>> 计划已持久化到 MySQL, userId={}", userId);

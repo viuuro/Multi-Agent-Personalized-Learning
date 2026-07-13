@@ -16,6 +16,9 @@
           @click="activeHeaderTab = 'files'"
         >历史文件</button>
       </div>
+      <h1 v-if="authStore.isLoggedIn" class="current-conversation-title" :title="chatStore.conversationTitle">
+        {{ chatStore.conversationTitle }}
+      </h1>
       <div class="header-right">
         <UserMenu
           v-if="authStore.isLoggedIn"
@@ -33,47 +36,79 @@
 
     <!-- 学习数据 / 历史文件 面板 -->
     <div v-if="authStore.isLoggedIn" class="overlay-panel">
-      <!-- 学习数据：贡献图 -->
-      <div v-if="activeHeaderTab === 'data'" class="contribution-graph">
-        <div class="graph-header">
-          <span class="graph-title">学习活跃度</span>
-          <span class="graph-subtitle">近 16 周</span>
+      <div class="dashboard-switch-slot">
+        <!-- 学习数据：贡献图 -->
+        <div v-if="activeHeaderTab === 'data'" class="contribution-graph">
+          <div class="graph-header">
+            <span class="graph-title">学习活跃度</span>
+            <span class="graph-subtitle">近 16 周</span>
+          </div>
+          <div class="graph-grid">
+            <div
+              v-for="(day, i) in contributionData"
+              :key="i"
+              class="graph-cell"
+              :style="{ opacity: day.level === 0 ? 0.15 : 0.3 + day.level * 0.15 }"
+              :title="`${day.date}：${day.conversationCount} 次对话，${day.submissionCount} 次成果提交，活跃度 ${day.score}`"
+            ></div>
+          </div>
+          <div class="graph-legend">
+            <span>少</span>
+            <div class="legend-cell" style="opacity: 0.15"></div>
+            <div class="legend-cell" style="opacity: 0.45"></div>
+            <div class="legend-cell" style="opacity: 0.6"></div>
+            <div class="legend-cell" style="opacity: 0.75"></div>
+            <div class="legend-cell" style="opacity: 0.9"></div>
+            <span>多</span>
+          </div>
         </div>
-        <div class="graph-grid">
-          <div
-            v-for="(day, i) in contributionData"
-            :key="i"
-            class="graph-cell"
-            :style="{ opacity: day.count === 0 ? 0.15 : 0.3 + day.count * 0.15 }"
-            :title="`${day.date}: ${day.count} 次对话`"
-          ></div>
-        </div>
-        <div class="graph-legend">
-          <span>少</span>
-          <div class="legend-cell" style="opacity: 0.15"></div>
-          <div class="legend-cell" style="opacity: 0.45"></div>
-          <div class="legend-cell" style="opacity: 0.6"></div>
-          <div class="legend-cell" style="opacity: 0.75"></div>
-          <div class="legend-cell" style="opacity: 0.9"></div>
-          <span>多</span>
-        </div>
-      </div>
-
-      <!-- 历史文件 -->
-      <div v-else class="file-history">
-        <div class="file-header">
-          <span class="file-title">历史文件</span>
-          <span class="file-subtitle">最近上传</span>
-        </div>
-        <div v-if="uploadedFiles.length === 0" class="file-empty">暂无上传记录</div>
-        <div v-else class="file-list">
-          <div v-for="(file, i) in uploadedFiles" :key="i" class="file-item">
-            <el-icon :size="14"><Document /></el-icon>
-            <span class="file-name">{{ file.name }}</span>
-            <span class="file-time">{{ file.time }}</span>
+        <!-- 历史文件 -->
+        <div v-else class="file-history">
+          <div class="file-header">
+            <span class="file-title">历史文件</span>
+            <span class="file-subtitle">最近上传</span>
+          </div>
+          <div v-if="uploadedFiles.length === 0" class="file-empty">暂无上传记录</div>
+          <div v-else class="file-list">
+            <div v-for="(file, i) in uploadedFiles" :key="i" class="file-item">
+              <UiIcon name="file" />
+              <span class="file-name">{{ file.name }}</span>
+              <span class="file-time">{{ file.time }}</span>
+            </div>
           </div>
         </div>
       </div>
+
+      <section class="conversation-picker">
+        <div class="conversation-picker-header">
+          <span class="conversation-picker-title">对话</span>
+          <button
+            class="new-conversation-btn"
+            type="button"
+            title="新建对话"
+            aria-label="新建对话"
+            :disabled="chatStore.isStreaming"
+            @click="startNewConversation"
+          >
+            <UiIcon name="new-chat" />
+          </button>
+        </div>
+        <div v-if="conversationSessions.length" class="conversation-list">
+          <button
+            v-for="session in conversationSessions"
+            :key="session.id"
+            class="conversation-item"
+            :class="{ active: session.id === chatStore.conversationId }"
+            type="button"
+            :disabled="chatStore.isStreaming"
+            @click="selectConversation(session)"
+          >
+            <span class="conversation-item-title">{{ session.title }}</span>
+            <span class="conversation-item-time">{{ session.timeLabel }}</span>
+          </button>
+        </div>
+        <div v-else class="conversation-empty">暂无历史对话</div>
+      </section>
     </div>
 
     <!-- Live2D 看板娘 -->
@@ -156,36 +191,162 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Document } from '@element-plus/icons-vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from './stores/authStore'
-import { deleteAccountApi } from './services/api'
-import type { AuthUser } from './services/api'
+import { useChatStore } from './stores/chatStore'
+import type { Message } from './stores/chatStore'
+import { deleteAccountApi, fetchConversationsApi, fetchLearningActivityApi } from './services/api'
+import type { AuthUser, ConversationRecord, DailyLearningActivity } from './services/api'
+import { fallbackConversationTitle, readConversationTitles } from './services/conversationTitles'
 import ChatView from './views/ChatView.vue'
 import Live2DWidget from './components/Live2DWidget.vue'
 import AuthModal from './components/AuthModal.vue'
 import UserMenu from './components/UserMenu.vue'
 import AccountModal from './components/AccountModal.vue'
+import UiIcon from './components/UiIcon.vue'
 
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 const showAccountModal = ref(false)
 const showAuth = ref(!authStore.isLoggedIn)
 const activeHeaderTab = ref<'data' | 'files'>('data')
 
 // 贡献图数据（16周 = 112天）
-const contributionData = ref<{ date: string; count: number }[]>([])
-function generateContributionData() {
-  const data: { date: string; count: number }[] = []
-  const today = new Date()
-  for (let i = 111; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const dateStr = `${d.getMonth() + 1}/${d.getDate()}`
-    data.push({ date: dateStr, count: Math.floor(Math.random() * 5) })
+type ContributionDay = DailyLearningActivity & { count: number }
+const contributionData = ref<ContributionDay[]>([])
+
+async function loadContributionData() {
+  const userId = authStore.user?.id
+  if (!userId) {
+    contributionData.value = []
+    return
   }
-  contributionData.value = data
+  try {
+    const data = await fetchLearningActivityApi(userId, 112)
+    contributionData.value = data.map(day => ({
+      ...day,
+      date: day.date.slice(5).replace('-', '/'),
+      count: day.level,
+    }))
+  } catch (err) {
+    console.warn('学习活跃度加载失败', err)
+    contributionData.value = []
+  }
 }
-generateContributionData()
+
+function handleActivityUpdated() {
+  void loadContributionData()
+}
+
+interface ConversationSession {
+  id: string
+  title: string
+  timeLabel: string
+  updatedAt: number
+  messages: Message[]
+}
+
+const conversationSessions = ref<ConversationSession[]>([])
+let hasInitializedConversations = false
+
+function formatConversationTime(timestamp: number) {
+  const date = new Date(timestamp)
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) {
+    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+async function loadConversationSessions() {
+  const userId = authStore.user?.id
+  if (!userId) {
+    conversationSessions.value = []
+    return
+  }
+  try {
+    const records = await fetchConversationsApi(userId, 300)
+    const grouped = new Map<string, ConversationRecord[]>()
+    for (const record of records) {
+      if (!record.conversationId) continue
+      const group = grouped.get(record.conversationId) || []
+      group.push(record)
+      grouped.set(record.conversationId, group)
+    }
+    const savedTitles = readConversationTitles(userId)
+    const sessions = Array.from(grouped.entries()).map(([id, items]) => {
+      const messages: Message[] = items.map(item => ({
+        id: item.id.toString(),
+        role: item.role as 'user' | 'assistant',
+        content: item.content,
+        timestamp: new Date(item.timestamp).getTime(),
+      }))
+      const updatedAt = Math.max(...messages.map(message => message.timestamp))
+      return {
+        id,
+        title: savedTitles[id] || fallbackConversationTitle(messages),
+        timeLabel: formatConversationTime(updatedAt),
+        updatedAt,
+        messages,
+      }
+    }).sort((a, b) => b.updatedAt - a.updatedAt)
+    conversationSessions.value = sessions
+
+    if (!hasInitializedConversations) {
+      hasInitializedConversations = true
+      if (sessions.length > 0 && !chatStore.conversationId) {
+        selectConversation(sessions[0])
+      } else if (sessions.length === 0 && chatStore.messages.length === 0) {
+        startNewConversation()
+      }
+    }
+  } catch (err) {
+    console.warn('对话列表加载失败', err)
+  }
+}
+
+function selectConversation(session: ConversationSession) {
+  if (chatStore.isStreaming) return
+  chatStore.loadConversation(session.id, session.title, session.messages)
+  window.dispatchEvent(new CustomEvent('conversation-selected', {
+    detail: { conversationId: session.id },
+  }))
+}
+
+function startNewConversation() {
+  if (chatStore.isStreaming) return
+  const conversationId = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  window.dispatchEvent(new CustomEvent('new-conversation', {
+    detail: { conversationId },
+  }))
+}
+
+function handleConversationListUpdated() {
+  void loadConversationSessions()
+}
+
+function handleConversationTitleUpdated(event: Event) {
+  const detail = (event as CustomEvent<{ conversationId: string; title: string }>).detail
+  if (!detail) return
+  const session = conversationSessions.value.find(item => item.id === detail.conversationId)
+  if (session) session.title = detail.title
+}
+
+onMounted(() => {
+  void loadContributionData()
+  void loadConversationSessions()
+  window.addEventListener('learning-activity-updated', handleActivityUpdated)
+  window.addEventListener('conversation-list-updated', handleConversationListUpdated)
+  window.addEventListener('conversation-title-updated', handleConversationTitleUpdated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('learning-activity-updated', handleActivityUpdated)
+  window.removeEventListener('conversation-list-updated', handleConversationListUpdated)
+  window.removeEventListener('conversation-title-updated', handleConversationTitleUpdated)
+})
 
 // 历史文件
 const uploadedFiles = ref<{ name: string; time: string }[]>([])
@@ -229,6 +390,9 @@ async function handleDeleteAccount() {
 function onLoggedIn(user: AuthUser) {
   authStore.setUser(user)
   showAuth.value = false
+  hasInitializedConversations = false
+  void loadContributionData()
+  void loadConversationSessions()
 }
 </script>
 
@@ -351,8 +515,9 @@ input:-webkit-autofill:active {
 .header-tab-btn {
   background: transparent;
   border: none;
-  color: var(--text-faint);
-  font-size: 13px;
+  color: var(--text-secondary);
+  opacity: 0.72;
+  font-size: 14px;
   cursor: pointer;
   padding: 4px 8px;
   transition: color 0.2s;
@@ -360,11 +525,13 @@ input:-webkit-autofill:active {
 
 .header-tab-btn:hover {
   color: var(--text-secondary);
+  opacity: 1;
 }
 
 .header-tab-btn.active {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
+  opacity: 1;
 }
 
 .header-right {
@@ -372,10 +539,28 @@ input:-webkit-autofill:active {
   align-items: center;
 }
 
+.current-conversation-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(46vw, 620px);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .app-header h1 {
   font-size: 18px;
   font-weight: 600;
   color: var(--accent);
+}
+.app-header .current-conversation-title {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .header-subtitle {
@@ -495,6 +680,10 @@ input:-webkit-autofill:active {
   padding: 14px;
   box-shadow: none;
 }
+.dashboard-switch-slot {
+  height: 144px;
+  overflow: visible;
+}
 
 /* 贡献图 */
 .graph-header, .file-header {
@@ -504,9 +693,105 @@ input:-webkit-autofill:active {
   margin-bottom: 10px;
 }
 .graph-title, .file-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-secondary);
+}
+.conversation-picker {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: none;
+}
+.conversation-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.conversation-picker-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.new-conversation-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--accent);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.new-conversation-btn .ui-icon {
+  width: 17px;
+  height: 17px;
+}
+.new-conversation-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.new-conversation-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: clamp(72px, calc(100vh - 689px), 178px);
+  padding-right: 2px;
+  overflow-y: auto;
+}
+.conversation-list::-webkit-scrollbar { width: 3px; }
+.conversation-list::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+.conversation-item {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.conversation-item:hover:not(:disabled) { background: var(--bg-hover); }
+.conversation-item.active {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.conversation-item:disabled { cursor: not-allowed; }
+.conversation-item-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.conversation-item-time {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.conversation-empty {
+  padding: 12px 8px;
+  color: var(--text-placeholder);
+  font-size: 11px;
+  text-align: center;
 }
 .graph-subtitle, .file-subtitle {
   font-size: 11px;
@@ -514,8 +799,9 @@ input:-webkit-autofill:active {
 }
 .graph-grid {
   display: grid;
-  grid-template-columns: repeat(16, 1fr);
-  gap: 3px;
+  grid-template-columns: repeat(16, minmax(8px, 10px));
+  justify-content: space-between;
+  gap: 2px;
 }
 .graph-cell {
   aspect-ratio: 1;
@@ -549,7 +835,7 @@ input:-webkit-autofill:active {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 200px;
+  max-height: 92px;
   overflow-y: auto;
 }
 .file-item {
@@ -564,6 +850,7 @@ input:-webkit-autofill:active {
 .file-item:hover {
   background: var(--bg-hover);
 }
+.file-item .ui-icon { width: 14px; height: 14px; }
 .file-name {
   flex: 1;
   overflow: hidden;

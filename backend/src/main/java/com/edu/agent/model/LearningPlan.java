@@ -23,6 +23,9 @@ import java.util.List;
  */
 public class LearningPlan {
 
+    /** 无参构造函数（Jackson 反序列化需要） */
+    public LearningPlan() {}
+
     /** 计划包含的周列表，共 4 周 */
     private List<PlanWeek> weeks;
 
@@ -41,6 +44,9 @@ public class LearningPlan {
      * }
      */
     public static class PlanWeek {
+        /** 无参构造函数（Jackson 反序列化需要） */
+        public PlanWeek() {}
+
         /** 第几周（1-4） */
         private int weekNumber;
         /** 本周学习主题 */

@@ -1,8 +1,11 @@
 package com.edu.agent.service;
 
 import com.edu.agent.model.Conversation;
+import com.edu.agent.model.LearningPlan;
+import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.model.UserProfile;
 import com.edu.agent.repository.ConversationRepository;
+import com.edu.agent.repository.LearningPlanRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,6 +67,10 @@ public class ChatService {
     private final ProfileService profileService;
     /** Mock AI 服务，用于无 API Key 时的降级模式 */
     private final MockAiService mockAiService;
+    /** 学习计划编排服务，用于处理对话中的计划更新意图 */
+    private final AgentOrchestrationService orchestrationService;
+    /** 学习计划持久化仓库 */
+    private final LearningPlanRepository learningPlanRepository;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置的 HTTP 客户端，用于调用 Python AI 服务 */
@@ -78,10 +89,14 @@ public class ChatService {
     public ChatService(ConversationRepository conversationRepository,
                        ProfileService profileService,
                        MockAiService mockAiService,
+                       AgentOrchestrationService orchestrationService,
+                       LearningPlanRepository learningPlanRepository,
                        @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.conversationRepository = conversationRepository;
         this.profileService = profileService;
         this.mockAiService = mockAiService;
+        this.orchestrationService = orchestrationService;
+        this.learningPlanRepository = learningPlanRepository;
         // MiMo API Key 只需要配置在 Python AI 服务中；Spring 默认始终调用 Python。
         // 只有显式设置 AI_MOCK_ENABLED=true 时才启用本地 Mock 模式。
         this.mockMode = mockMode;
@@ -119,24 +134,28 @@ public class ChatService {
         // Step 3: 提取画像 + 生成回复
         UserProfile extractedProfile;
         String fullResponse;
+        String planAction = "none";
         if (mockMode) {
             // Mock 模式：使用预设数据
             extractedProfile = mockAiService.mockProfileExtraction(userMessage);
             fullResponse = mockAiService.mockChatResponse(userMessage, extractedProfile);
+            planAction = detectPlanAction(userMessage);
         } else {
             // 真实模式：调用 Python AI 服务（FastAPI + LangChain → MiMo-v2.5 API）
-            Map<String, String> result = callPythonChat(userMessage, imageData, userId);
-            fullResponse = result.get("response");
-            String profileJson = result.get("profile_json");
+            Map<String, Object> result = callPythonChat(userMessage, imageData, userId, convId);
+            fullResponse = String.valueOf(result.getOrDefault("response", ""));
+            String profileJson = String.valueOf(result.getOrDefault("profile_json", "{}"));
+            planAction = String.valueOf(result.getOrDefault("plan_action", "none"));
             // 将 Python 返回的 JSON 解析为 UserProfile 对象
             extractedProfile = profileService.parseProfileJson(profileJson);
         }
 
         // Step 4: 更新用户画像到 MySQL
-        UserProfile savedProfile = profileService.updateProfile(extractedProfile, userId);
+        UserProfile savedProfile = profileService.updateProfile(extractedProfile, userId, convId);
 
         // Step 5-7: 在新线程中执行 SSE 流式推送（避免阻塞主线程）
         final String finalResponse = fullResponse;
+        final String finalPlanAction = planAction;
         new Thread(() -> {
             try {
                 // Step 5a: 推送会话 ID（前端用于关联后续消息）
@@ -154,11 +173,17 @@ public class ChatService {
                 // Step 6: 推送画像更新通知（前端用于更新雷达图）
                 String profileJson = savedProfile.getProfileJson();
                 sendSSE(emitter, "profile_update", profileJson);
-                // Step 7a: 推送完成信号（前端用于结束流式状态）
-                sendSSE(emitter, "done", "");
+
+                // 用户在对话中明确要求修订计划时，直接生成、持久化并推送新计划。
+                if ("regenerate".equals(finalPlanAction)) {
+                    LearningPlan updatedPlan = regenerateAndPersistPlan(userId, convId, userMessage);
+                    sendSSE(emitter, "plan_update", objectMapper.writeValueAsString(updatedPlan));
+                }
 
                 // Step 7b: 保存 AI 回复到 MySQL
                 saveMessage(finalResponse, "assistant", convId, userId);
+                // Step 7a: 推送完成信号（前端用于结束流式状态）
+                sendSSE(emitter, "done", "");
                 // 关闭 SSE 连接
                 emitter.complete();
             } catch (IOException | InterruptedException e) {
@@ -181,29 +206,27 @@ public class ChatService {
      * @param userMessage 用户输入的消息
      * @return Map { "response": AI回复, "profile_json": 更新后的画像JSON }
      */
-    private Map<String, String> callPythonChat(String userMessage, String imageData, Long userId) {
+    private Map<String, Object> callPythonChat(String userMessage, String imageData, Long userId,
+                                                String conversationId) {
         try {
             // 获取当前画像 JSON 传给 Python（用于画像增量更新）
-            UserProfile currentProfile = profileService.getCurrentProfile(userId);
-            Map<String, Object> body;
+            UserProfile currentProfile = profileService.getCurrentProfile(userId, conversationId);
+            Map<String, Object> body = new HashMap<>();
+            body.put("message", userMessage);
+            body.put("profile_json", currentProfile.getProfileJson() != null
+                    ? currentProfile.getProfileJson() : "");
+            body.put("conversation_context", buildConversationContext(userId, conversationId));
+            body.put("current_plan_json", learningPlanRepository
+                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
+                    .map(LearningPlanEntity::getPlanJson)
+                    .orElse(""));
             if (imageData != null && !imageData.isEmpty()) {
                 // 有图片时，传递图片数据
                 log.info(">>> 传递图片数据给 Python AI，imageData 长度: {}", imageData.length());
                 log.info(">>> imageData 前50字符: {}", imageData.substring(0, Math.min(50, imageData.length())));
-                body = Map.of(
-                        "message", userMessage,
-                        "profile_json", currentProfile.getProfileJson() != null
-                                ? currentProfile.getProfileJson() : "",
-                        "image_data", imageData
-                );
+                body.put("image_data", imageData);
             } else {
-                // 无图片时，只传递消息和画像
                 log.info(">>> 无图片数据");
-                body = Map.of(
-                        "message", userMessage,
-                        "profile_json", currentProfile.getProfileJson() != null
-                                ? currentProfile.getProfileJson() : ""
-                );
             }
             String json = objectMapper.writeValueAsString(body);
             log.info(">>> 发送给 Python AI 的 JSON 长度: {}", json.length());
@@ -223,7 +246,7 @@ public class ChatService {
             if (httpResponse.statusCode() == 200) {
                 // 成功：解析 JSON 响应
                 @SuppressWarnings("unchecked")
-                Map<String, String> result = objectMapper.readValue(httpResponse.body(), Map.class);
+                Map<String, Object> result = objectMapper.readValue(httpResponse.body(), Map.class);
                 return result;
             } else {
                 log.error("Python AI 返回错误: {} {}", httpResponse.statusCode(), httpResponse.body());
@@ -245,7 +268,7 @@ public class ChatService {
      * @param userMessage 用户输入的消息
      * @return Map { "response": Mock回复, "profile_json": Mock画像JSON }
      */
-    private Map<String, String> fallbackToMock(String userMessage) {
+    private Map<String, Object> fallbackToMock(String userMessage) {
         UserProfile profile = mockAiService.mockProfileExtraction(userMessage);
         String response = mockAiService.mockChatResponse(userMessage, profile);
         try {
@@ -258,11 +281,119 @@ public class ChatService {
                             "learningPace", profile.getLearningPace(),
                             "interestAreas", profile.getInterestAreas(),
                             "shortTermGoal", profile.getShortTermGoal()
-                    ))
+                    )),
+                    "plan_action", detectPlanAction(userMessage)
             );
         } catch (Exception e) {
-            return Map.of("response", response, "profile_json", "{}");
+            return Map.of("response", response, "profile_json", "{}",
+                    "plan_action", detectPlanAction(userMessage));
         }
+    }
+
+    /** 根据当前完整对话生成适合展示在顶栏的简短标题。 */
+    public String generateConversationTitle(String conversationContext) {
+        String context = conversationContext == null ? "" : conversationContext.trim();
+        if (context.isEmpty()) {
+            return "新对话";
+        }
+        try {
+            String json = objectMapper.writeValueAsString(Map.of("conversation_context", context));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(pythonAiUrl + "/title"))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(45))
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+                String title = String.valueOf(result.getOrDefault("title", "")).trim();
+                if (!title.isBlank()) {
+                    return title.length() > 24 ? title.substring(0, 24) : title;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.warn("会话标题分析失败，使用本地标题: {}", e.getMessage());
+        }
+        return fallbackConversationTitle(context);
+    }
+
+    private String fallbackConversationTitle(String context) {
+        String candidate = "";
+        for (String line : context.split("\\R")) {
+            if (line.startsWith("用户：")) {
+                candidate = line.substring(3).trim();
+            }
+        }
+        if (candidate.isBlank()) {
+            candidate = context;
+        }
+        candidate = candidate
+                .replaceAll("(?s)```.*?```", "")
+                .replaceAll("[\\s#>*_`\\[\\](){}]+", "")
+                .replaceFirst("^(请问|请帮我|帮我|我想要?|我要|如何|怎么)", "")
+                .replaceAll("^[，。！？:：;；]+|[，。！？:：;；]+$", "");
+        if (candidate.isBlank()) {
+            return "新对话";
+        }
+        return candidate.length() > 16 ? candidate.substring(0, 16) : candidate;
+    }
+
+    /** 组装最近完整对话，同时保留用户与智能体消息及其时序。 */
+    private String buildConversationContext(Long userId, String conversationId) {
+        try {
+            List<Conversation> recent = new ArrayList<>(conversationRepository
+                    .findByUserIdAndConversationIdOrderByTimestampDesc(userId, conversationId));
+            if (recent.size() > 40) {
+                recent = new ArrayList<>(recent.subList(0, 40));
+            }
+            Collections.reverse(recent);
+            StringBuilder context = new StringBuilder();
+            for (Conversation conversation : recent) {
+                String role = "assistant".equals(conversation.getRole()) ? "智能体" : "用户";
+                context.append(role).append("：")
+                        .append(conversation.getContent()).append('\n');
+            }
+            return context.toString().trim();
+        } catch (Exception e) {
+            log.warn("获取完整对话上下文失败: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    /** 与 Python 端意图识别保持一致，供 Mock/降级模式使用。 */
+    private String detectPlanAction(String message) {
+        if (message == null) {
+            return "none";
+        }
+        String text = message.replaceAll("\\s+", "");
+        boolean mentionsPlan = text.contains("计划");
+        boolean asksForChange = text.matches(".*(重新|更新|调整|修改|重做|改一下|再生成|换一份|换一个).*");
+        return mentionsPlan && asksForChange ? "regenerate" : "none";
+    }
+
+    /** 根据用户修订要求更新最近计划，并保存为当前版本。 */
+    private LearningPlan regenerateAndPersistPlan(Long userId, String conversationId,
+                                                  String revisionRequest) {
+        LearningPlanEntity entity = learningPlanRepository
+                .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
+                .orElse(new LearningPlanEntity());
+        String existingPlanJson = entity.getPlanJson() != null ? entity.getPlanJson() : "";
+        LearningPlan updatedPlan = orchestrationService.generatePlan(
+                userId, conversationId, existingPlanJson, revisionRequest);
+        try {
+            entity.setUserId(userId);
+            entity.setConversationId(conversationId);
+            entity.setPlanJson(objectMapper.writeValueAsString(updatedPlan));
+            learningPlanRepository.save(entity);
+            log.info("对话触发的学习计划已更新, userId={}", userId);
+        } catch (Exception e) {
+            log.warn("对话触发的计划持久化失败: {}", e.getMessage());
+        }
+        return updatedPlan;
     }
 
     // ===== 工具方法 =====

@@ -21,8 +21,12 @@ public class LearningPlanEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    /** 所属对话 ID，用于隔离同一用户的不同学习计划 */
+    @Column(name = "conversation_id", length = 64)
+    private String conversationId;
+
     /** 完整计划 JSON（weeks 数组 + resources） */
-    @Column(name = "plan_json", columnDefinition = "JSON", nullable = false)
+    @Column(name = "plan_json", columnDefinition = "TEXT", nullable = false)
     private String planJson;
 
     /** 创建时间 */
@@ -51,6 +55,9 @@ public class LearningPlanEntity {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
 
     public String getPlanJson() { return planJson; }
     public void setPlanJson(String planJson) { this.planJson = planJson; }

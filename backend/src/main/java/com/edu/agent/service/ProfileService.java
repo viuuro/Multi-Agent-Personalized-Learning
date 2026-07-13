@@ -57,14 +57,15 @@ public class ProfileService {
      *
      * @param userId 用户 ID
      */
-    public UserProfile getCurrentProfile(Long userId) {
-        var opt = profileRepository.findFirstByUserIdOrderByUpdatedAtDesc(userId);
+    public UserProfile getCurrentProfile(Long userId, String conversationId) {
+        var opt = profileRepository.findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+                userId, conversationId);
         if (opt.isPresent()) {
             UserProfile profile = opt.get();
             loadTransientFields(profile);
             return profile;
         }
-        return createDefaultProfile(userId);
+        return createDefaultProfile(userId, conversationId);
     }
 
     /**
@@ -87,9 +88,10 @@ public class ProfileService {
      * @param extracted 提取的画像数据
      * @param userId    所属用户 ID
      */
-    public UserProfile updateProfile(UserProfile extracted, Long userId) {
+    public UserProfile updateProfile(UserProfile extracted, Long userId, String conversationId) {
         UserProfile saved = new UserProfile();
         saved.setUserId(userId);
+        saved.setConversationId(conversationId);
         saved.setProfileJson(extracted.getProfileJson());
         saved.setUpdatedAt(LocalDateTime.now());
 
@@ -97,7 +99,8 @@ public class ProfileService {
         copyTransientFields(extracted, saved);
 
         saved = profileRepository.save(saved);  // 【Spring Boot/Data JPA】自动生成的保存方法
-        log.info(">>> 用户画像已更新并存入 MySQL。id={}, userId={}", saved.getId(), userId);
+        log.info(">>> 对话画像已更新并存入 MySQL。id={}, userId={}, conversationId={}",
+                saved.getId(), userId, conversationId);
         return saved;
     }
 
@@ -107,9 +110,10 @@ public class ProfileService {
      *
      * @param userId 所属用户 ID
      */
-    public UserProfile createDefaultProfile(Long userId) {
+    public UserProfile createDefaultProfile(Long userId, String conversationId) {
         UserProfile profile = new UserProfile();
         profile.setUserId(userId);
+        profile.setConversationId(conversationId);
         profile.setKnowledgeBase(5);
         profile.setCognitiveStyle("visual");
         profile.setWeaknessPoints(List.of("待评估"));

@@ -28,6 +28,9 @@ export const useChatStore = defineStore('chat', () => {
   /** 当前会话 ID，首次对话时后端返回 */
   const conversationId = ref<string>('')
 
+  /** 当前会话的简化标题，展示在顶部中央 */
+  const conversationTitle = ref('新对话')
+
   /** 是否正在接收 SSE 流式响应 */
   const isStreaming = ref(false)
 
@@ -69,15 +72,32 @@ export const useChatStore = defineStore('chat', () => {
     conversationId.value = id
   }
 
+  function setConversationTitle(title: string) {
+    conversationTitle.value = title.trim() || '新对话'
+  }
+
+  /** 切换到指定历史会话。 */
+  function loadConversation(id: string, title: string, history: Message[]) {
+    conversationId.value = id
+    conversationTitle.value = title || '新对话'
+    messages.value = [...history]
+    streamingContent.value = ''
+    isStreaming.value = false
+  }
+
   /** 清空当前会话 */
   function clearMessages() {
     messages.value = []
     conversationId.value = ''
+    conversationTitle.value = '新对话'
+    streamingContent.value = ''
+    isStreaming.value = false
   }
 
   return {
     messages,
     conversationId,
+    conversationTitle,
     isStreaming,
     streamingContent,
     addMessage,
@@ -85,6 +105,8 @@ export const useChatStore = defineStore('chat', () => {
     appendStreamContent,
     finishStreaming,
     setConversationId,
+    setConversationTitle,
+    loadConversation,
     clearMessages,
   }
 })

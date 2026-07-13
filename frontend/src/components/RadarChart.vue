@@ -27,6 +27,13 @@ let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 let resizeFrame: number | null = null
 let settleTimer: ReturnType<typeof setTimeout> | null = null
+let valueAnimationFrame: number | null = null
+
+type RadarValues = [number, number, number, number, number, number]
+const RADAR_ANIMATION_DURATION = 800
+const EMPTY_RADAR_VALUES: RadarValues = [0, 0, 0, 0, 0, 0]
+let displayedValues: RadarValues = [...EMPTY_RADAR_VALUES]
+let hasRenderedValues = false
 
 /** 初始化 ECharts 实例 */
 function initChart() {
@@ -51,15 +58,24 @@ function getAccentColors() {
   }
 }
 
-/** 更新雷达图数据 */
-function updateChart() {
-  if (!chartInstance) return
-
+/** 将画像数据转换为雷达图的 6 个维度值。 */
+function getRadarValues(): RadarValues {
   const p = profileStore.profile
   const hasData = p.knowledgeBase > 0 || p.learningPace > 0
-  const colors = getAccentColors()
+  const cognitiveValue = !hasData ? 0 : p.cognitiveStyle === 'visual' ? 8 : p.cognitiveStyle === 'verbal' ? 6 : 5
+  const weaknessValue = !hasData ? 0 : Math.max(1, 10 - p.weaknessPoints.length * 2)
+  const interestValue = !hasData ? 0 : Math.min(10, p.interestAreas.length * 2 + 2)
+  const goalValue = !hasData ? 0 : p.shortTermGoal ? Math.min(10, p.shortTermGoal.length / 2) : 2
 
-  // 6 个维度的指标定义（简化标签，避免换行遮挡）
+  return [weaknessValue, p.learningPace, cognitiveValue, goalValue, interestValue, p.knowledgeBase]
+}
+
+/** 使用同一组中间值同步重绘端点、折线和填充面。 */
+function renderChart(values: RadarValues) {
+  if (!chartInstance) return
+
+  const colors = getAccentColors()
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
   const indicator = [
     { name: '薄弱\n点', max: 10 },
     { name: '学习\n节奏', max: 10 },
@@ -69,28 +85,16 @@ function updateChart() {
     { name: '知识\n基础', max: 10 },
   ]
 
-  // 将画像数据映射到雷达图数值（无数据时全部为 0）
-  const cognitiveValue = !hasData ? 0 : p.cognitiveStyle === 'visual' ? 8 : p.cognitiveStyle === 'verbal' ? 6 : 5
-  const weaknessValue = !hasData ? 0 : Math.max(1, 10 - p.weaknessPoints.length * 2)
-  const interestValue = !hasData ? 0 : Math.min(10, p.interestAreas.length * 2 + 2)
-  const goalValue = !hasData ? 0 : p.shortTermGoal ? Math.min(10, p.shortTermGoal.length / 2) : 2
-
-  const style = getComputedStyle(document.documentElement)
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-
   const option: echarts.EChartsOption = {
-    animationDuration: 800,
-    animationEasing: 'cubicOut',
+    animation: false,
     tooltip: {
       trigger: 'item',
       renderMode: 'html',
       appendTo: 'body',
       confine: false,
       position: (point: [number, number], params, dom) => {
-        const tooltipWidth = dom instanceof HTMLElement ? dom.offsetWidth : 100;
-        const x = point[0] - tooltipWidth - 10;
-        const y = point[1] - 10;
-        return [x, y];
+        const tooltipWidth = dom instanceof HTMLElement ? dom.offsetWidth : 100
+        return [point[0] - tooltipWidth - 10, point[1] - 10]
       },
       backgroundColor: isDark ? 'rgba(40, 36, 32, 0.95)' : 'rgba(255, 255, 255, 0.95)',
       borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
@@ -114,53 +118,81 @@ function updateChart() {
         padding: [3, 5],
       },
       splitArea: {
-        areaStyle: {
-          color: [colors.splitLight, colors.splitDark],
-        },
+        areaStyle: { color: [colors.splitLight, colors.splitDark] },
       },
       splitLine: {
-        lineStyle: {
-          color: colors.line,
-        },
+        lineStyle: { color: colors.line },
       },
       axisLine: {
-        lineStyle: {
-          color: colors.line,
-        },
+        lineStyle: { color: colors.line },
       },
     },
     series: [
       {
+        id: 'learning-profile-radar',
         name: '学生画像',
         type: 'radar',
         data: [
           {
-            value: [
-              weaknessValue,
-              p.learningPace,
-              cognitiveValue,
-              goalValue,
-              interestValue,
-              p.knowledgeBase,
-            ],
+            value: values,
             name: '当前画像',
-            areaStyle: {
-              color: colors.accentGlow,
-            },
-            lineStyle: {
-              color: colors.accent,
-              width: 2,
-            },
-            itemStyle: {
-              color: colors.accent,
-            },
+            areaStyle: { color: colors.accentGlow },
+            lineStyle: { color: colors.accent, width: 2 },
+            itemStyle: { color: colors.accent },
           },
         ],
       },
     ],
   }
 
-  chartInstance.setOption(option)
+  chartInstance.setOption(option, { lazyUpdate: false })
+}
+
+/**
+ * 对六个维度统一做数值插值，避免 ECharts 将标记点与雷达面片分开更新。
+ */
+function updateChart(animate = true) {
+  if (!chartInstance) return
+
+  const targetValues = getRadarValues()
+  if (valueAnimationFrame !== null) {
+    cancelAnimationFrame(valueAnimationFrame)
+    valueAnimationFrame = null
+  }
+
+  if (!hasRenderedValues) {
+    displayedValues = [...EMPTY_RADAR_VALUES]
+    renderChart(displayedValues)
+    hasRenderedValues = true
+  }
+
+  const startValues = [...displayedValues] as RadarValues
+  const valuesChanged = targetValues.some((value, index) => Math.abs(value - startValues[index]) > 0.001)
+  if (!animate || !valuesChanged) {
+    displayedValues = [...targetValues]
+    renderChart(displayedValues)
+    return
+  }
+
+  const startedAt = performance.now()
+  const animateFrame = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / RADAR_ANIMATION_DURATION)
+    const easedProgress = 1 - Math.pow(1 - progress, 3)
+    displayedValues = startValues.map((startValue, index) => (
+      startValue + (targetValues[index] - startValue) * easedProgress
+    )) as RadarValues
+    renderChart(displayedValues)
+
+    if (progress < 1) {
+      valueAnimationFrame = requestAnimationFrame(animateFrame)
+    } else {
+      displayedValues = [...targetValues]
+      valueAnimationFrame = null
+      renderChart(displayedValues)
+    }
+  }
+
+  valueAnimationFrame = requestAnimationFrame(animateFrame)
 }
 
 // ===== 生命周期 =====
@@ -179,6 +211,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   resizeObserver?.disconnect()
   if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  if (valueAnimationFrame !== null) cancelAnimationFrame(valueAnimationFrame)
   if (settleTimer) clearTimeout(settleTimer)
   chartInstance?.dispose()
 })
@@ -214,11 +247,11 @@ function resizeToContainer() {
 }
 
 // 监听画像数据变化，自动更新雷达图
-watch(() => profileStore.profile, updateChart, { deep: true })
+watch(() => profileStore.profile, () => updateChart(), { deep: true })
 
 // 监听主题变化，更新雷达图颜色
 const themeStore = useThemeStore()
-watch(() => themeStore.isDark, updateChart)
+watch(() => themeStore.isDark, () => renderChart(displayedValues))
 </script>
 
 <style scoped>

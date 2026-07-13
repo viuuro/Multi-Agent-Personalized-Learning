@@ -33,6 +33,10 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, Long> 
      */
     Optional<UserProfile> findFirstByUserIdOrderByUpdatedAtDesc(Long userId);
 
+    /** 查询指定用户在指定对话中的最新画像。 */
+    Optional<UserProfile> findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+            Long userId, String conversationId);
+
     /**
      * 删除指定用户的所有画像记录
      * 自动生成 SQL: DELETE FROM user_profile WHERE user_id = ?

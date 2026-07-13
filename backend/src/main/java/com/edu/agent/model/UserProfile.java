@@ -37,6 +37,10 @@ public class UserProfile {
     @Column(name = "user_id")
     private Long userId;
 
+    /** 所属对话 ID，同一用户的不同对话拥有独立画像 */
+    @Column(name = "conversation_id", length = 64)
+    private String conversationId;
+
     /** 画像 JSON 数据，直接存入 MySQL JSON 类型字段 */
     @Column(name = "profile_json", columnDefinition = "JSON")
     private String profileJson;
@@ -78,6 +82,9 @@ public class UserProfile {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
 
     public String getProfileJson() { return profileJson; }
     public void setProfileJson(String profileJson) { this.profileJson = profileJson; }

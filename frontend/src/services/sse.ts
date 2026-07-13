@@ -1,6 +1,7 @@
 import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import type { UserProfile } from '../stores/profileStore'
+import type { LearningPlan } from './api'
 
 /**
  * SSE（Server-Sent Events）服务层
@@ -130,9 +131,23 @@ function handleSSEEvent(
       }
       break
 
+    case 'plan_update':
+      // 对话触发的计划修订：通知计划卡片立即换成新版本。
+      try {
+        const plan: LearningPlan = typeof data.content === 'string'
+          ? JSON.parse(data.content)
+          : (data.content as unknown as LearningPlan)
+        window.dispatchEvent(new CustomEvent('learning-plan-updated', { detail: plan }))
+      } catch {
+        console.warn('学习计划更新数据解析失败')
+      }
+      break
+
     case 'done':
       // 流式输出完成：将缓存的文本正式添加到消息列表
       chatStore.finishStreaming()
+      window.dispatchEvent(new Event('learning-activity-updated'))
+      window.dispatchEvent(new Event('conversation-list-updated'))
       break
 
     case 'error':

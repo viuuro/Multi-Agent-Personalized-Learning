@@ -1,9 +1,10 @@
 """
 个性化学习多智能体系统 —— Python AI 服务（基于 LangChain）
 
-提供两个核心能力：
+提供三个核心能力：
   POST /chat — 画像提取 + 对话生成
   POST /plan — 4 周学习计划生成（含资源推荐）
+  POST /voice/welcome — 非流式语音克隆欢迎语
 
 使用 LangChain 框架调用小米 MiMo-v2.5 API（兼容 OpenAI 接口格式）。
 Spring Boot 后端通过 HTTP 调用本服务。
@@ -15,11 +16,12 @@ Spring Boot 后端通过 HTTP 调用本服务。
   - HumanMessage         → user role 设置
 """
 from urllib.parse import quote_plus, urlencode
+from pathlib import Path
 import requests as http_requests
 import json
 import os
 import logging
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -30,10 +32,18 @@ from pydantic import BaseModel
 from langchain_openai import ChatOpenAI          # LLM 调用客户端（兼容 MiMo-v2.5）
 from langchain_core.messages import SystemMessage, HumanMessage  # 消息类型
 from langchain_core.prompts import ChatPromptTemplate           # 提示词模板
+from starlette.concurrency import run_in_threadpool
+
+from voice_clone_demo import (
+    DEFAULT_STYLE_INSTRUCTION,
+    VoiceCloneError,
+    get_mimo_api_key,
+    voice_clone_audio,
+)
 
 # ===== 配置 =====
 # 小米 MiMo-v2.5 API 密钥，从环境变量读取（必须设置，否则降级为 Mock 模式）
-MIMO_API_KEY = os.getenv("MIMO_API_KEY", "")
+MIMO_API_KEY = get_mimo_api_key() or ""
 # 小米 MiMo-v2.5 API 基础地址（兼容 OpenAI 格式）
 MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 # 使用的模型名称
@@ -42,7 +52,9 @@ MODEL_NAME = "mimo-v2.5"
 # 创建 LangChain ChatOpenAI 实例
 llm = ChatOpenAI(
     model=MODEL_NAME,                           # 模型名称：mimo-v2.5
-    openai_api_key=MIMO_API_KEY,                # API 密钥
+    # ChatOpenAI 构造时强制要求非空 Key；占位值仅用于允许无 Key 时启动服务，
+    # 不会被当作可用凭据，真实调用仍会由 MiMo API 拒绝并进入现有降级逻辑。
+    openai_api_key=MIMO_API_KEY or "not-configured",
     openai_api_base=MIMO_BASE_URL,              # API 基础地址
     temperature=0.7,                            # 生成温度（0=确定性，1=随机性）
     max_tokens=2048,                            # 最大生成 token 数
@@ -73,6 +85,12 @@ class PlanRequest(BaseModel):
 
 class ConversationTitleRequest(BaseModel):
     conversation_context: str = ""
+
+
+class WelcomeVoiceRequest(BaseModel):
+    username: str = ""
+    text: str = ""
+    style: str = ""
 
 
 # ===== 工具函数 =====
@@ -845,7 +863,86 @@ async def parse_file(file: UploadFile = File(...)):
         return {"text": "", "error": f"文件解析失败: {str(e)}"}
 
 
+def resolve_voice_reference_audio() -> Path:
+    """Resolve the configured local reference audio without exposing it over HTTP."""
+    configured_path = os.getenv("MIMO_VOICE_REFERENCE_AUDIO", "").strip()
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent / path
+        return path
+
+    samples_dir = Path(__file__).resolve().parent / "samples"
+    for preferred_name in ("玛丽.mp3", "mary.mp3", "玛丽.wav", "mary.wav"):
+        preferred_path = samples_dir / preferred_name
+        if preferred_path.is_file():
+            return preferred_path
+
+    candidates = sorted(
+        path
+        for pattern in ("*.mp3", "*.wav")
+        for path in samples_dir.glob(pattern)
+        if path.is_file()
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise VoiceCloneError(
+            "未找到参考音频；请设置 MIMO_VOICE_REFERENCE_AUDIO，"
+            "或在 python-ai/samples 中放置 WAV/MP3 文件。"
+        )
+    raise VoiceCloneError(
+        "samples 中存在多个参考音频；请通过 MIMO_VOICE_REFERENCE_AUDIO 指定一个文件。"
+    )
+
+
+@app.post("/voice/welcome")
+async def welcome_voice(req: WelcomeVoiceRequest):
+    """Generate one WAV welcome message with MiMo's non-streaming voice clone API."""
+    username = req.username.strip()
+    text = req.text.strip()
+    style = req.style.strip() or DEFAULT_STYLE_INSTRUCTION
+
+    if len(username) > 80:
+        raise HTTPException(status_code=400, detail="username 不能超过 80 个字符")
+    if not text:
+        display_name = username or "同学"
+        text = f"{display_name}，欢迎回来。很高兴继续陪你学习。"
+    if len(text) > 2000:
+        raise HTTPException(status_code=400, detail="text 不能超过 2000 个字符")
+    if len(style) > 1000:
+        raise HTTPException(status_code=400, detail="style 不能超过 1000 个字符")
+
+    try:
+        reference_audio = resolve_voice_reference_audio()
+        audio_bytes = await run_in_threadpool(
+            voice_clone_audio,
+            reference_audio,
+            text,
+            style,
+        )
+    except VoiceCloneError as exc:
+        logger.warning("欢迎语音生成失败: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    logger.info(
+        "欢迎语音生成完成: reference=%s, text_length=%d, audio_bytes=%d",
+        reference_audio.name,
+        len(text),
+        len(audio_bytes),
+    )
+    return Response(
+        content=audio_bytes,
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/health")
 async def health():
     """健康检查端点，用于 Spring Boot 启动时验证 Python AI 服务是否可用"""
-    return {"status": "ok", "service": "edu-ai-python"}
+    return {
+        "status": "ok",
+        "service": "edu-ai-python",
+        "mimo_configured": bool(MIMO_API_KEY),
+    }

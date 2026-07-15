@@ -247,7 +247,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
 import { sendMessage } from '../services/sse'
-import { fetchProfile, parseFileApi, fetchSavedPlanApi, generateConversationTitleApi } from '../services/api'
+import { fetchProfile, parseFileApi, fetchSavedPlanApi, fetchWelcomeVoice, generateConversationTitleApi } from '../services/api'
 import type { LearningPlan } from '../services/api'
 import { fallbackConversationTitle, readConversationTitles, saveConversationTitle } from '../services/conversationTitles'
 import RadarChart from '../components/RadarChart.vue'
@@ -541,6 +541,59 @@ function streamGreeting(text: string) {
   }, 35)
 }
 
+let welcomeAudio: HTMLAudioElement | null = null
+let welcomeAudioUrl = ''
+let resumeWelcomeVoice: (() => void) | null = null
+
+function clearWelcomeVoice() {
+  if (resumeWelcomeVoice) {
+    document.removeEventListener('pointerdown', resumeWelcomeVoice)
+    resumeWelcomeVoice = null
+  }
+  welcomeAudio?.pause()
+  welcomeAudio = null
+  if (welcomeAudioUrl) {
+    URL.revokeObjectURL(welcomeAudioUrl)
+    welcomeAudioUrl = ''
+  }
+}
+
+async function playWelcomeVoice(greeting: string) {
+  try {
+    const audioBlob = await fetchWelcomeVoice(authStore.user?.username || '', greeting)
+    if (!audioBlob.size) return
+
+    clearWelcomeVoice()
+    welcomeAudioUrl = URL.createObjectURL(audioBlob)
+    const audio = new Audio(welcomeAudioUrl)
+    welcomeAudio = audio
+    audio.addEventListener('ended', () => {
+      if (welcomeAudio === audio) clearWelcomeVoice()
+    }, { once: true })
+
+    try {
+      await audio.play()
+    } catch {
+      // 浏览器可能拦截自动播放；用户第一次点击页面后恢复播放。
+      const resume = () => {
+        resumeWelcomeVoice = null
+        void audio.play().catch(() => undefined)
+      }
+      resumeWelcomeVoice = resume
+      document.addEventListener('pointerdown', resume, { once: true })
+    }
+  } catch (err) {
+    console.info('欢迎语音暂不可用，已保留文字欢迎语。', err)
+  }
+}
+
+function startWelcomeGreeting() {
+  if (chatStore.messages.length || chatStore.isStreaming) return
+  const greeting = getGreeting()
+  streamGreeting(greeting)
+  void playWelcomeVoice(greeting)
+}
+
 watch(
   () => authStore.isLoggedIn,
   (loggedIn) => {
@@ -718,6 +771,7 @@ onMounted(() => {
   window.addEventListener('new-conversation', handleNewConversation)
   window.addEventListener('conversation-selected', handleConversationSelected)
   nextTick(syncSubmissionCenter)
+  startWelcomeGreeting()
 })
 
 onUnmounted(() => {
@@ -731,6 +785,7 @@ onUnmounted(() => {
   if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
   if (scrollTimer) clearTimeout(scrollTimer)
   if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
+  clearWelcomeVoice()
 })
 
 watch(sidebarOpen, () => nextTick(syncSubmissionCenter))

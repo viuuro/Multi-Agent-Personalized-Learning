@@ -174,6 +174,19 @@ export async function parseFileApi(file: File): Promise<{ text: string; filename
   return result.data
 }
 
+/** POST /api/voice/welcome —— 生成当前欢迎文字的克隆 WAV 音频。 */
+export async function fetchWelcomeVoice(username: string, text: string): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/voice/welcome`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, text }),
+  })
+  if (!res.ok) {
+    throw new Error(`欢迎语音生成失败：HTTP ${res.status}`)
+  }
+  return res.blob()
+}
+
 export async function updateProfileApi(
   userId: number,
   username?: string,

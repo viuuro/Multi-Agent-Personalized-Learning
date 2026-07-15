@@ -77,6 +77,7 @@
 **前置依赖：**
 - JDK 17+
 - Maven 3.8+
+- Python 3.12+
 - MySQL 8.0+
 - Node.js 18+ & npm 9+
 
@@ -92,6 +93,9 @@ CREATE DATABASE edu_agent CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 # MiMo-v2.5 API Key（可选：默认使用 Mock 模式，无需真实 Key）
 export MIMO_API_KEY=sk-your-key-here
 
+# 可选：语音克隆参考音频；相对路径以 python-ai 目录为基准
+export MIMO_VOICE_REFERENCE_AUDIO=samples/your-reference.mp3
+
 # MySQL 连接信息（可根据实际情况修改 application.yml 中的默认值）
 export MYSQL_USER=root
 export MYSQL_PASSWORD=123456
@@ -100,7 +104,24 @@ export MYSQL_PASSWORD=123456
 export MIMO_MOCK_MODE=true
 ```
 
-### 4. 启动后端
+### 4. 启动 Python AI 服务
+
+```bash
+cd python-ai
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --port 8000
+```
+
+语音克隆使用 MiMo 非流式接口。参考音频仅支持 WAV/MP3，Base64 编码后不得超过
+10 MiB；请只使用已获得声音所有者授权的音频。
+
+也可单独运行语音克隆命令：
+
+```bash
+python voice_clone_demo.py samples/your-reference.mp3 "你好，这是克隆语音。" -o output_tts.wav
+```
+
+### 5. 启动后端
 
 ```bash
 cd backend
@@ -109,7 +130,7 @@ mvn spring-boot:run
 
 后端启动在 `http://localhost:8080`，启动日志会提示当前是否处于 Mock 模式。
 
-### 5. 启动前端
+### 6. 启动前端
 
 安装 Node.js 依赖并启动开发服务器：
 

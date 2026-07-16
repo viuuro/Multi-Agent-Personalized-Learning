@@ -105,6 +105,88 @@ public class ProfileService {
     }
 
     /**
+     * 只允许有足够长期证据支持的字段发生变化，避免模型在闲聊中漂移画像。
+     */
+    public UserProfile updateProfileWithEvidence(UserProfile extracted,
+                                                 Long userId,
+                                                 String conversationId,
+                                                 String evidenceJson) {
+        java.util.Set<String> supported = new java.util.HashSet<>();
+        try {
+            List<Map<String, Object>> items = objectMapper.readValue(
+                    evidenceJson == null ? "[]" : evidenceJson,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            for (Map<String, Object> item : items) {
+                String scope = String.valueOf(item.getOrDefault("scope", "LONG_TERM"));
+                Object rawConfidence = item.get("confidence");
+                double confidence = rawConfidence instanceof Number number
+                        ? number.doubleValue() : Double.parseDouble(String.valueOf(rawConfidence));
+                if ("LONG_TERM".equalsIgnoreCase(scope) && confidence >= 0.60) {
+                    supported.add(String.valueOf(item.get("dimension")));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("画像证据解析失败，本轮保留原画像: {}", e.getMessage());
+        }
+
+        return updateProfileWithSupportedDimensions(extracted, userId, conversationId, supported);
+    }
+
+    public UserProfile updateProfileWithSupportedDimensions(UserProfile extracted,
+                                                            Long userId,
+                                                            String conversationId,
+                                                            java.util.Set<String> supported) {
+        UserProfile current = getCurrentProfile(userId, conversationId);
+        if (supported == null || supported.isEmpty()) return current;
+        UserProfile reconciled = new UserProfile();
+        reconciled.setKnowledgeBase(supported.contains("knowledgeBase")
+                ? extracted.getKnowledgeBase() : current.getKnowledgeBase());
+        reconciled.setCognitiveStyle(supported.contains("cognitiveStyle")
+                ? extracted.getCognitiveStyle() : current.getCognitiveStyle());
+        reconciled.setWeaknessPoints(supported.contains("weaknessPoints")
+                ? extracted.getWeaknessPoints() : current.getWeaknessPoints());
+        reconciled.setLearningPace(supported.contains("learningPace")
+                ? extracted.getLearningPace() : current.getLearningPace());
+        reconciled.setInterestAreas(supported.contains("interestAreas")
+                ? extracted.getInterestAreas() : current.getInterestAreas());
+        reconciled.setShortTermGoal(supported.contains("shortTermGoal")
+                ? extracted.getShortTermGoal() : current.getShortTermGoal());
+        try {
+            reconciled.setProfileJson(objectMapper.writeValueAsString(Map.of(
+                    "knowledgeBase", reconciled.getKnowledgeBase(),
+                    "cognitiveStyle", reconciled.getCognitiveStyle(),
+                    "weaknessPoints", reconciled.getWeaknessPoints(),
+                    "learningPace", reconciled.getLearningPace(),
+                    "interestAreas", reconciled.getInterestAreas(),
+                    "shortTermGoal", reconciled.getShortTermGoal()
+            )));
+        } catch (JsonProcessingException e) {
+            reconciled.setProfileJson(current.getProfileJson());
+        }
+        return updateProfile(reconciled, userId, conversationId);
+    }
+
+    /** 将成果中有证据的薄弱点并入画像，供后续回答和计划修订使用。 */
+    public UserProfile applySubmissionWeaknesses(Long userId,
+                                                 String conversationId,
+                                                 List<String> weaknesses) {
+        UserProfile current = getCurrentProfile(userId, conversationId);
+        if (weaknesses == null || weaknesses.isEmpty()) return current;
+        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
+        if (current.getWeaknessPoints() != null) {
+            current.getWeaknessPoints().stream()
+                    .filter(item -> item != null && !item.isBlank() && !"待评估".equals(item))
+                    .forEach(merged::add);
+        }
+        weaknesses.stream().filter(item -> item != null && !item.isBlank()).forEach(merged::add);
+        UserProfile extracted = new UserProfile();
+        copyTransientFields(current, extracted);
+        extracted.setWeaknessPoints(merged.stream().limit(6).toList());
+        return updateProfileWithSupportedDimensions(
+                extracted, userId, conversationId, java.util.Set.of("weaknessPoints"));
+    }
+
+    /**
      * 创建默认画像 —— 用于用户首次使用时初始化
      * 所有维度设为中性值，等待后续对话逐步修正
      *

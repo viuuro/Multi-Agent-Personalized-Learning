@@ -5,6 +5,7 @@ import com.edu.agent.model.ChatMessage;
 import com.edu.agent.model.Conversation;
 import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.service.ChatService;
+import com.edu.agent.service.ConversationSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -38,11 +39,15 @@ public class ChatController {
 
     private final ChatService chatService;
     private final ConversationRepository conversationRepository;
+    private final ConversationSessionService conversationSessionService;
 
     /** 【Spring Boot】构造器注入 */
-    public ChatController(ChatService chatService, ConversationRepository conversationRepository) {
+    public ChatController(ChatService chatService,
+                          ConversationRepository conversationRepository,
+                          ConversationSessionService conversationSessionService) {
         this.chatService = chatService;
         this.conversationRepository = conversationRepository;
+        this.conversationSessionService = conversationSessionService;
     }
 
     /**
@@ -67,7 +72,14 @@ public class ChatController {
         if (hasImage) {
             log.info(">>> imageData prefix: {}", imageData.substring(0, Math.min(50, imageLen)));
         }
-        return chatService.handleChat(chatMessage.getMessage(), chatMessage.getConversationId(), imageData, chatMessage.getUserId());
+        return chatService.handleChat(
+                chatMessage.getMessage(),
+                chatMessage.getDisplayMessage(),
+                chatMessage.getConversationId(),
+                imageData,
+                chatMessage.getAttachmentName(),
+                chatMessage.getAttachmentType(),
+                chatMessage.getUserId());
     }
 
     /**
@@ -88,9 +100,13 @@ public class ChatController {
     @GetMapping("/conversations")
     public ApiResponse<List<Conversation>> getConversations(@RequestParam Long userId,
                                                             @RequestParam(defaultValue = "50") int limit) {
-        List<Conversation> messages = conversationRepository.findLatestByUserId(userId, limit);
+        int safeLimit = Math.max(1, Math.min(limit, 1000));
+        List<Conversation> messages = conversationRepository.findLatestByUserId(userId, safeLimit);
         // 数据库按倒序查的，反转为时间正序给前端
         Collections.reverse(messages);
+        Map<String, String> titles = conversationSessionService.getTitleMap(userId);
+        messages.forEach(message -> message.setConversationTitle(
+                titles.get(message.getConversationId())));
         return ApiResponse.success("ok", messages);
     }
 
@@ -98,8 +114,15 @@ public class ChatController {
     @PostMapping("/conversations/title")
     public ApiResponse<Map<String, String>> generateConversationTitle(
             @RequestBody Map<String, Object> body) {
+        Object userIdValue = body.get("userId");
+        String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
+        if (userIdValue == null || conversationId.isBlank()) {
+            return ApiResponse.error(400, "缺少 userId 或 conversationId");
+        }
+        Long userId = Long.valueOf(userIdValue.toString());
         String context = String.valueOf(body.getOrDefault("conversationContext", ""));
         String title = chatService.generateConversationTitle(context);
+        title = conversationSessionService.saveTitle(userId, conversationId, title);
         return ApiResponse.success("ok", Map.of("title", title));
     }
 }

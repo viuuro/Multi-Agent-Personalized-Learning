@@ -99,20 +99,38 @@ public class SubmissionController {
     public ApiResponse<Map<String, Object>> submit(@RequestBody SubmissionRequest body,
                                                    @RequestHeader("X-User-Id") Long userId) {
         // 参数校验
-        if (body.getTaskId() == null) {
-            return ApiResponse.error(400, "taskId 不能为空");
+        if (body.getTaskId() == null
+                && (body.getConversationId() == null || body.getConversationId().isBlank())) {
+            return ApiResponse.error(400, "taskId 和 conversationId 至少提供一个");
         }
         if (body.getContent() == null || body.getContent().trim().isEmpty()) {
             return ApiResponse.error(400, "content 不能为空");
         }
 
-        log.info(">>> POST /api/submissions —— userId={}, taskId={}", userId, body.getTaskId());
+        log.info(">>> POST /api/submissions —— userId={}, taskId={}, conversationId={}",
+                userId, body.getTaskId(), body.getConversationId());
 
         try {
-            Long submissionId = submissionService.submit(userId, body.getTaskId(), body.getContent());
+            Long submissionId = body.getConversationId() != null && !body.getConversationId().isBlank()
+                    ? submissionService.submit(userId, body.getConversationId(), body.getFileName(),
+                            body.getFileSize(), body.getContent())
+                    : submissionService.submit(userId, body.getTaskId(), body.getContent());
             return ApiResponse.success("提交成功，AI 正在评价中", Map.of("submissionId", submissionId));
         } catch (IllegalArgumentException e) {
             // 业务异常（如任务不存在、无权限）返回 400 错误
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** GET /api/conversations/{conversationId}/submissions —— 恢复对话内成果与评分。 */
+    @GetMapping("/conversations/{conversationId}/submissions")
+    public ApiResponse<List<SubmissionDetail>> getConversationSubmissions(
+            @PathVariable String conversationId,
+            @RequestHeader("X-User-Id") Long userId) {
+        try {
+            return ApiResponse.success(submissionService
+                    .getSubmissionsByConversation(userId, conversationId));
+        } catch (IllegalArgumentException e) {
             return ApiResponse.error(400, e.getMessage());
         }
     }

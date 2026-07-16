@@ -39,14 +39,12 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- MySQL Connector (生产环境使用，当前注释掉以使用 H2) -->
-        <!--
+        <!-- MySQL Connector（设置 DB_URL/DB_DRIVER 后可直接切换到 MySQL） -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
-        -->
 
         <!-- Test -->
         <dependency>

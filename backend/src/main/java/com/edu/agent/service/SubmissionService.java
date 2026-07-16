@@ -1,20 +1,24 @@
 package com.edu.agent.service;
 
-import com.edu.agent.config.AiProperties;
 import com.edu.agent.controller.dto.SubmissionDetail;
 import com.edu.agent.model.AiEvaluation;
+import com.edu.agent.model.LearningPlan;
+import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.model.Task;
 import com.edu.agent.model.TaskSubmission;
 import com.edu.agent.repository.AiEvaluationRepository;
+import com.edu.agent.repository.LearningPlanRepository;
 import com.edu.agent.repository.TaskRepository;
 import com.edu.agent.repository.TaskSubmissionRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -23,6 +27,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
@@ -41,10 +46,8 @@ import java.util.stream.Collectors;
  *   ├──────────────────────────────────────────────────────────────────┤
  *   │  ② 异步 AI 评价                                                  │
  *   │     evaluateAsync()                                             │
- *   │       ├─ buildPrompt() — 构造提示词（任务描述 + 提交成果）          │
- *   │       ├─ callAiApi()   — 调用 OpenAI 兼容接口                     │
- *   │       │   ├─ 有 API Key → HTTP 调用真实 AI                       │
- *   │       │   └─ 无 API Key → mockEvaluation() 降级                  │
+ *   │       ├─ 调用 Python AI /evaluate → MiMo-v2.5                    │
+ *   │       ├─ 提取评分、薄弱点和下一步行动                            │
  *   │       ├─ 解析 JSON {score, analysis, suggestion}                │
  *   │       ├─ 保存 AiEvaluation 到数据库                              │
  *   │       └─ 更新 TaskSubmission.status → EVALUATED                 │
@@ -66,13 +69,13 @@ import java.util.stream.Collectors;
  *   - AI API 超时 → 捕获异常 → status→ERROR + errorMessage 记录
  *   - AI 返回格式错误 → 捕获异常 → status→ERROR + errorMessage 记录
  *   - AI 评分超出 0-100 → 抛出异常 → status→ERROR
- *   - 未配置 API Key → 自动降级 Mock 评价（不调用真实 API）
+ *   - 仅显式开启 AI_MOCK_ENABLED 时使用 Mock 评价
  *
  * ========== 【Spring Boot】在本类的使用 ==========
  *   - @Service: 声明为业务服务层 Bean
  *   - @Transactional: 声明式事务管理
- *   - @Async: 异步方法执行（由 AsyncConfig + @EnableAsync 启用）
- *   - 构造器注入: 所有 Repository + AiProperties
+ *   - 专用 Executor: 异步执行评分，并在应用重启后恢复 PENDING 任务
+ *   - 构造器注入: Repository、记忆/画像服务与专用 Executor
  */
 @Service  // 【Spring Boot】声明为业务服务 Bean
 public class SubmissionService {
@@ -85,8 +88,14 @@ public class SubmissionService {
     private final TaskSubmissionRepository submissionRepository;
     /** AI 评价数据访问 */
     private final AiEvaluationRepository evaluationRepository;
-    /** AI 配置（API Key、Base URL、Model、超时等） */
-    private final AiProperties aiProperties;
+    private final LearningPlanRepository learningPlanRepository;
+    private final Executor submissionExecutor;
+    private final ConversationSessionService conversationSessionService;
+    private final ProfileEvidenceService profileEvidenceService;
+    private final ProfileService profileService;
+    private final boolean mockMode;
+    @Value("${python.ai.url:http://localhost:8000}")
+    private String pythonAiUrl;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置 HTTP 客户端，用于调用 AI API */
@@ -98,11 +107,21 @@ public class SubmissionService {
     public SubmissionService(TaskRepository taskRepository,
                              TaskSubmissionRepository submissionRepository,
                              AiEvaluationRepository evaluationRepository,
-                             AiProperties aiProperties) {
+                             LearningPlanRepository learningPlanRepository,
+                             @Qualifier("submissionExecutor") Executor submissionExecutor,
+                             ConversationSessionService conversationSessionService,
+                             ProfileEvidenceService profileEvidenceService,
+                             ProfileService profileService,
+                             @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.taskRepository = taskRepository;
         this.submissionRepository = submissionRepository;
         this.evaluationRepository = evaluationRepository;
-        this.aiProperties = aiProperties;
+        this.learningPlanRepository = learningPlanRepository;
+        this.submissionExecutor = submissionExecutor;
+        this.conversationSessionService = conversationSessionService;
+        this.profileEvidenceService = profileEvidenceService;
+        this.profileService = profileService;
+        this.mockMode = mockMode;
 
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))  // 连接超时 10 秒
@@ -124,7 +143,6 @@ public class SubmissionService {
      * @return 提交记录的 ID（前端可用此 ID 轮询查询评价结果）
      * @throws IllegalArgumentException 任务不存在、用户无权限、内容为空
      */
-    @Transactional  // 【Spring Boot】声明式事务——保证提交记录保存的原子性
     public Long submit(Long userId, Long taskId, String content) {
         // 1. 校验任务存在并属于当前用户（防止用户提交他人的任务）
         Task task = taskRepository.findByIdAndUserId(taskId, userId)
@@ -135,41 +153,96 @@ public class SubmissionService {
             throw new IllegalArgumentException("提交内容不能为空");
         }
 
-        // 3. 保存提交记录（初始状态为 PENDING，表示等待 AI 评价）
+        return persistAndSchedule(userId, task, null, null, null, content);
+    }
+
+    /** 按当前对话的学习计划创建/复用成果任务并持久化提交。 */
+    public Long submit(Long userId,
+                       String conversationId,
+                       String fileName,
+                       Long fileSize,
+                       String content) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("conversationId 不能为空");
+        }
+        LearningPlanEntity planEntity = learningPlanRepository
+                .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("当前对话尚未生成学习计划"));
+
+        Task task = taskRepository.findByUserIdAndPlanId(userId, planEntity.getId()).stream()
+                .findFirst()
+                .orElseGet(() -> {
+                    Task created = new Task();
+                    created.setUserId(userId);
+                    created.setPlanId(planEntity.getId());
+                    created.setDescription(buildPlanSubmissionDescription(planEntity));
+                    created.setStatus("PENDING");
+                    return taskRepository.save(created);
+                });
+
+        return persistAndSchedule(userId, task, conversationId, fileName, fileSize, content);
+    }
+
+    private Long persistAndSchedule(Long userId,
+                                    Task task,
+                                    String conversationId,
+                                    String fileName,
+                                    Long fileSize,
+                                    String content) {
+        if (content == null || content.trim().isEmpty()) {
+            throw new IllegalArgumentException("提交内容不能为空");
+        }
         TaskSubmission submission = new TaskSubmission();
-        submission.setTaskId(taskId);
+        submission.setTaskId(task.getId());
         submission.setUserId(userId);
+        submission.setConversationId(conversationId);
+        submission.setFileName(fileName);
+        submission.setFileSize(fileSize);
         submission.setContent(content.trim());
         submission.setStatus(TaskSubmission.STATUS_PENDING);
-        submissionRepository.save(submission);
+        submission = submissionRepository.save(submission);
 
-        log.info(">>> 用户 {} 提交任务 {} 的成果, submissionId={}", userId, taskId, submission.getId());
+        Long submissionId = submission.getId();
+        String submittedContent = submission.getContent();
+        submissionExecutor.execute(() -> evaluateSubmission(
+                submissionId, task.getDescription(), submittedContent));
+        log.info(">>> 用户 {} 提交成果, conversationId={}, taskId={}, submissionId={}",
+                userId, conversationId, task.getId(), submissionId);
+        return submissionId;
+    }
 
-        // 4. 异步调用 AI 评价（不阻塞当前线程，用户在 GET 查询时获取结果）
-        evaluateAsync(submission.getId(), task.getDescription(), content);
-
-        return submission.getId();
+    private String buildPlanSubmissionDescription(LearningPlanEntity entity) {
+        try {
+            LearningPlan plan = objectMapper.readValue(entity.getPlanJson(), LearningPlan.class);
+            String topics = plan.getWeeks().stream()
+                    .map(LearningPlan.PlanWeek::getTopic)
+                    .filter(topic -> topic != null && !topic.isBlank())
+                    .limit(4)
+                    .collect(Collectors.joining("、"));
+            if (!topics.isBlank()) return "提交以下学习计划的阶段性成果：" + topics;
+        } catch (Exception ignored) {
+            // 旧版计划 JSON 不完整时使用通用描述。
+        }
+        return "提交当前学习计划的阶段性学习成果";
     }
 
     /**
-     * 异步调用 AI 进行评价 —— 由 @Async 注解在独立线程池中执行
+     * 异步调用 AI 进行评价 —— 由专用线程池执行
      *
-     * 此方法不会阻塞主线程，Spring 的 AsyncConfig 会为其分配独立线程执行。
+     * 此方法不会阻塞提交请求，AsyncConfig 中的线程池负责执行。
      * 评价完成后自动更新 submission 的状态和关联的 ai_evaluation 记录。
      *
      * @param submissionId      提交记录 ID
      * @param taskDescription   任务描述（来自 Task.description，用于 AI 判断完成度）
      * @param submissionContent 用户提交的成果内容（来自请求体）
      */
-    @Async  // 【Spring Boot】异步执行 —— 由 AsyncConfig 的 @EnableAsync 启用
-    protected void evaluateAsync(Long submissionId, String taskDescription, String submissionContent) {
+    private void evaluateSubmission(Long submissionId, String taskDescription, String submissionContent) {
         log.info(">>> 开始异步 AI 评价, submissionId={}", submissionId);
         try {
-            // 1. 构造 AI Prompt
-            String prompt = buildPrompt(taskDescription, submissionContent);
-
-            // 2. 调用 AI API（若有 API Key）或 Mock 降级
-            Map<String, Object> aiResult = callAiApi(prompt);
+            TaskSubmission submission = submissionRepository.findById(submissionId).orElseThrow();
+            Map<String, Object> aiResult = mockMode
+                    ? mockEvaluation(submissionContent)
+                    : callPythonEvaluation(taskDescription, submissionContent, submission);
 
             // 3. 解析 AI 返回的 JSON 结果
             Integer score = (Integer) aiResult.get("score");
@@ -191,12 +264,21 @@ public class SubmissionService {
             evaluation.setScore(score);
             evaluation.setAnalysis(analysis);
             evaluation.setSuggestion(suggestion);
+            List<String> weaknesses = stringList(aiResult.get("weaknesses"));
+            List<String> recommendedActions = stringList(aiResult.get("recommended_actions"));
+            evaluation.setWeaknessesJson(objectMapper.writeValueAsString(weaknesses));
+            evaluation.setRecommendedActionsJson(objectMapper.writeValueAsString(recommendedActions));
             evaluationRepository.save(evaluation);
 
             // 6. 更新提交状态为已评价
-            TaskSubmission submission = submissionRepository.findById(submissionId).orElseThrow();
             submission.setStatus(TaskSubmission.STATUS_EVALUATED);
             submissionRepository.save(submission);
+
+            try {
+                applyEvaluationToLearningLoop(submission, score, analysis, suggestion, weaknesses);
+            } catch (Exception loopError) {
+                log.warn("成果评价已保存，但学习闭环更新失败: {}", loopError.getMessage());
+            }
 
             log.info(">>> AI 评价完成, submissionId={}, score={}", submissionId, score);
 
@@ -217,155 +299,109 @@ public class SubmissionService {
         }
     }
 
-    /**
-     * 构造 AI Prompt —— 让模型根据任务描述和提交成果进行评分
-     *
-     * Prompt 设计原则：
-     *   - 明确角色定位：你是一位专业的学习成果评估专家
-     *   - 提供完整的任务描述和提交内容
-     *   - 指定四个评估维度：完成度、质量、创新性、规范性
-     *   - 强制要求 JSON 格式输出（便于后端解析）
-     *   - 限定评分范围（0-100 整数）
-     *   - 要求使用中文（analysis 和 suggestion 字段）
-     *
-     * @param taskDescription   任务描述
-     * @param submissionContent 用户提交的成果内容
-     * @return 完整的 Prompt 字符串
-     */
-    private String buildPrompt(String taskDescription, String submissionContent) {
-        return "你是一位专业的学习成果评估专家。请根据以下任务描述和用户提交的成果，进行评分和分析。\n\n"
-                + "【任务描述】\n" + taskDescription + "\n\n"
-                + "【用户提交成果】\n" + submissionContent + "\n\n"
-                + "请从以下维度进行评估：\n"
-                + "1. 完成度：成果是否完整覆盖了任务要求\n"
-                + "2. 质量：成果的深度、准确性和条理性\n"
-                + "3. 创新性：是否有独到的见解或方法\n"
-                + "4. 规范性：格式和表达是否规范\n\n"
-                + "请严格按以下 JSON 格式返回（不要包含其他文字）：\n"
-                + "{\n"
-                + "  \"score\": 85,\n"
-                + "  \"analysis\": \"详细分析用户成果的优缺点...\",\n"
-                + "  \"suggestion\": \"具体的改进建议...\"\n"
-                + "}\n\n"
-                + "注意：score 为 0-100 的整数，analysis 和 suggestion 需用中文。";
-    }
-
-    /**
-     * 调用 OpenAI 兼容的 API 接口
-     *
-     * 支持任何兼容 OpenAI Chat Completion 格式的 API，包括：
-     *   - OpenAI GPT-4o / GPT-4 / GPT-3.5
-     *   - DeepSeek Chat
-     *   - 通义千问
-     *   - 本地部署的 LLaMA / ChatGLM（需兼容接口）
-     *
-     * 如果未配置 API Key，自动降级到 mockEvaluation()，返回预设的评分数据。
-     *
-     * @param prompt 发送给 AI 的提示词
-     * @return 解析后的 JSON 结果，包含 score/analysis/suggestion 三个字段
-     * @throws Exception AI 调用失败、返回格式错误、超时等
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> callAiApi(String prompt) throws Exception {
-        String apiKey = aiProperties.getApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            // 无 API Key 时使用 Mock 评价（降级模式）
-            log.warn("AI API Key 未配置，使用 Mock 评价");
-            return mockEvaluation(prompt);
+    private Map<String, Object> callPythonEvaluation(String taskDescription,
+                                                     String submissionContent,
+                                                     TaskSubmission submission) throws Exception {
+        String profileJson = "";
+        String planJson = "";
+        if (submission.getConversationId() != null && !submission.getConversationId().isBlank()) {
+            profileJson = profileService.getCurrentProfile(
+                    submission.getUserId(), submission.getConversationId()).getProfileJson();
+            planJson = learningPlanRepository
+                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+                            submission.getUserId(), submission.getConversationId())
+                    .map(LearningPlanEntity::getPlanJson)
+                    .orElse("");
         }
-
-        // 构造请求体（OpenAI Chat Completion 格式）
-        Map<String, Object> requestBody = Map.of(
-                "model", aiProperties.getModel(),
-                "messages", List.of(
-                        Map.of("role", "system", "content", "你是一个专业的编程作业评分助手。"),
-                        Map.of("role", "user", "content", prompt)
-                ),
-                "temperature", 0.3,     // 低温度使输出更稳定
-                "max_tokens", 2000       // 确保有足够的输出长度
-        );
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        // 构造 HTTP POST 请求
+        Map<String, Object> requestBody = new java.util.LinkedHashMap<>();
+        requestBody.put("task_description", taskDescription);
+        requestBody.put("submission_content", submissionContent);
+        requestBody.put("profile_json", profileJson == null ? "" : profileJson);
+        requestBody.put("current_plan_json", planJson);
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(aiProperties.getBaseUrl() + "/chat/completions"))
+                .uri(URI.create(pythonAiUrl + "/evaluate"))
                 .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(Duration.ofSeconds(aiProperties.getTimeoutSeconds()))
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
                 .build();
-
-        // 发送请求
-        HttpResponse<String> response = httpClient.send(request,
-                HttpResponse.BodyHandlers.ofString());
-
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new RuntimeException("AI API 调用失败, status=" + response.statusCode()
-                    + ", body=" + response.body());
+            throw new RuntimeException("Python AI 成果评价失败, status=" + response.statusCode());
         }
-
-        // 解析 OpenAI 标准响应格式
-        Map<String, Object> responseMap = objectMapper.readValue(response.body(),
-                new TypeReference<Map<String, Object>>() {});
-
-        // 提取 choices[0].message.content（标准 OpenAI 响应结构）
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("AI 返回的 choices 为空");
-        }
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        String content = (String) message.get("content");
-
-        if (content == null || content.isBlank()) {
-            throw new RuntimeException("AI 返回的 content 为空");
-        }
-
-        // 清理可能的 Markdown 代码块标记（AI 有时会用 ```json 包裹 JSON）
-        content = content.trim();
-        if (content.startsWith("```json")) {
-            content = content.substring(7);
-        } else if (content.startsWith("```")) {
-            content = content.substring(3);
-        }
-        if (content.endsWith("```")) {
-            content = content.substring(0, content.length() - 3);
-        }
-        content = content.trim();
-
-        // 解析 JSON
-        Map<String, Object> result = objectMapper.readValue(content,
-                new TypeReference<Map<String, Object>>() {});
-
-        // 类型转换：score 可能是 Integer 或 Double（某些 API 返回浮点数）
-        Object scoreObj = result.get("score");
-        if (scoreObj instanceof Number) {
-            result.put("score", ((Number) scoreObj).intValue());
-        }
-
+        Map<String, Object> result = objectMapper.readValue(
+                response.body(), new TypeReference<Map<String, Object>>() {});
+        Object score = result.get("score");
+        if (score instanceof Number number) result.put("score", number.intValue());
         return result;
     }
 
-    /**
-     * Mock 评价 —— 当未配置 API Key 时的降级方案
-     *
-     * 返回固定评分（85 分）和预设的分析/建议文本，
-     * 确保开发阶段和演示环境可以正常运行 AI 评价功能。
-     *
-     * @param prompt 原始 Prompt（Mock 模式下不使用，仅用于参数一致性）
-     * @return 模拟的 AI 评价结果
-     */
-    private Map<String, Object> mockEvaluation(String prompt) {
-        log.info(">>> 使用 Mock AI 评价");
+    private void applyEvaluationToLearningLoop(TaskSubmission submission,
+                                               int score,
+                                               String analysis,
+                                               String suggestion,
+                                               List<String> weaknesses) throws Exception {
+        String conversationId = submission.getConversationId();
+        if (conversationId == null || conversationId.isBlank()) return;
+        conversationSessionService.recordSubmissionFeedback(
+                submission.getUserId(), conversationId, score, analysis, suggestion);
+        if (weaknesses.isEmpty()) return;
+        double confidence = score < 80 ? 0.82 : 0.68;
+        Map<String, Object> evidence = Map.of(
+                "dimension", "weaknessPoints",
+                "value", weaknesses,
+                "evidence", "学习成果评分 " + score + " 分：" + analysis,
+                "confidence", confidence,
+                "scope", "LONG_TERM",
+                "action", "merge"
+        );
+        java.util.Set<String> accepted = profileEvidenceService.persist(
+                submission.getUserId(), conversationId, null,
+                objectMapper.writeValueAsString(List.of(evidence)));
+        if (accepted.contains("weaknessPoints")) {
+            profileService.applySubmissionWeaknesses(
+                    submission.getUserId(), conversationId, weaknesses);
+        }
+    }
+
+    private List<String> stringList(Object value) {
+        if (!(value instanceof List<?> list)) return List.of();
+        return list.stream().map(String::valueOf).map(String::trim)
+                .filter(item -> !item.isBlank()).distinct().limit(6).toList();
+    }
+
+    private Map<String, Object> mockEvaluation(String ignored) {
         return Map.of(
                 "score", 85,
-                "analysis", "用户提交的成果基本完成了任务要求，内容结构清晰，逻辑性较强。"
-                        + "在关键概念的理解上表现良好，能够正确应用所学知识。"
-                        + "建议在深度和细节方面进一步加强。",
-                "suggestion", "1. 可以增加更多实际案例来佐证观点\n"
-                        + "2. 建议补充代码示例或实践验证\n"
-                        + "3. 部分表述可以更加精确和专业化"
+                "analysis", "成果结构完整，已覆盖主要任务要求；当前为显式 Mock 评价。",
+                "suggestion", "补充一个可验证的实践案例，并记录验证结果。",
+                "weaknesses", List.of("实践验证不足"),
+                "recommended_actions", List.of("补充实践案例", "记录验证结果")
         );
+    }
+
+    /** 后端重启后继续处理已经落库但尚未完成的评分任务。 */
+    @EventListener(ApplicationReadyEvent.class)
+    public void resumePendingEvaluations() {
+        List<TaskSubmission> pending = submissionRepository.findByStatus(TaskSubmission.STATUS_PENDING);
+        if (!pending.isEmpty()) {
+            log.info(">>> 恢复 {} 个未完成的成果评分任务", pending.size());
+        }
+        for (TaskSubmission submission : pending) {
+            if (evaluationRepository.findBySubmissionId(submission.getId()).isPresent()) {
+                submission.setStatus(TaskSubmission.STATUS_EVALUATED);
+                submissionRepository.save(submission);
+                continue;
+            }
+            taskRepository.findByIdAndUserId(submission.getTaskId(), submission.getUserId())
+                    .ifPresentOrElse(
+                            task -> submissionExecutor.execute(() -> evaluateSubmission(
+                                    submission.getId(), task.getDescription(), submission.getContent())),
+                            () -> {
+                                submission.setStatus(TaskSubmission.STATUS_ERROR);
+                                submission.setErrorMessage("关联任务不存在，无法恢复评分");
+                                submissionRepository.save(submission);
+                            });
+        }
     }
 
     // ===== 查询方法 =====
@@ -387,6 +423,19 @@ public class SubmissionService {
         // AI 评价可能尚未完成（status=PENDING）或失败（status=ERROR），此时 evaluation 为 null
         AiEvaluation evaluation = evaluationRepository.findBySubmissionId(submissionId).orElse(null);
         return SubmissionDetail.from(submission, evaluation);
+    }
+
+    /** 查询指定对话下的成果与评分，刷新或切换对话时用于恢复 UI。 */
+    public List<SubmissionDetail> getSubmissionsByConversation(Long userId, String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("conversationId 不能为空");
+        }
+        return submissionRepository
+                .findByUserIdAndConversationIdOrderBySubmissionTimeDesc(userId, conversationId)
+                .stream()
+                .map(submission -> SubmissionDetail.from(submission,
+                        evaluationRepository.findBySubmissionId(submission.getId()).orElse(null)))
+                .collect(Collectors.toList());
     }
 
     /**

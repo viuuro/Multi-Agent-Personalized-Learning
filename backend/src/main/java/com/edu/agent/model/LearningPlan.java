@@ -18,8 +18,7 @@ import java.util.List;
  *   - 展开模式：el-dialog 模态框显示完整计划
  *   - 编辑模式：可修改每周主题、任务、资源
  *
- * 注意：此为普通 POJO，不映射数据库（不使用 @Entity 注解），
- * 计划数据不持久化到 MySQL，每次由 AI 重新生成。
+ * 注意：此为 API 使用的普通 POJO；持久化由 LearningPlanEntity 以 JSON 版本形式完成。
  */
 public class LearningPlan {
 

@@ -56,6 +56,40 @@ export interface DailyLearningActivity {
   level: number
 }
 
+export interface UploadedFileRecord {
+  id: number
+  userId: number
+  conversationId?: string
+  fileName: string
+  sizeBytes: number
+  purpose: 'CHAT' | 'SUBMISSION'
+  uploadedAt: string
+}
+
+export interface SubmissionEvaluation {
+  id: number
+  score: number
+  analysis: string
+  suggestion: string
+  weaknessesJson?: string
+  recommendedActionsJson?: string
+  evaluationTime: string
+}
+
+export interface SubmissionDetail {
+  id: number
+  taskId: number
+  userId: number
+  conversationId?: string
+  fileName?: string
+  fileSize?: number
+  content: string
+  submissionTime: string
+  status: 'PENDING' | 'EVALUATED' | 'ERROR'
+  errorMessage?: string
+  evaluation?: SubmissionEvaluation
+}
+
 // ========== 通用请求方法 ==========
 
 /**
@@ -71,7 +105,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<ApiRespon
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`)
   }
-  return res.json()
+  const payload = await res.json() as ApiResponse<T>
+  if (payload.code >= 400) {
+    throw new Error(payload.message || '请求失败')
+  }
+  return payload
 }
 
 // ========== 业务接口 ==========
@@ -156,9 +194,15 @@ export async function registerApi(username: string, password: string): Promise<A
  * POST /api/parse-file —— 上传文件并提取文本内容
  * 支持格式：PDF (.pdf)、Word (.docx)、纯文本 (.txt)
  */
-export async function parseFileApi(file: File): Promise<{ text: string; filename: string; length: number }> {
+export async function parseFileApi(
+  file: File,
+  context?: { userId?: number; conversationId?: string; purpose?: 'CHAT' | 'SUBMISSION' }
+): Promise<{ text: string; filename: string; length: number }> {
   const formData = new FormData()
   formData.append('file', file)
+  if (context?.userId) formData.append('userId', String(context.userId))
+  if (context?.conversationId) formData.append('conversationId', context.conversationId)
+  if (context?.purpose) formData.append('purpose', context.purpose)
 
   const res = await fetch(`${BASE_URL}/parse-file`, {
     method: 'POST',
@@ -185,6 +229,11 @@ export async function fetchWelcomeVoice(username: string, text: string): Promise
     throw new Error(`欢迎语音生成失败：HTTP ${res.status}`)
   }
   return res.blob()
+}
+
+export async function fetchUploadedFilesApi(userId: number, limit = 50): Promise<UploadedFileRecord[]> {
+  const res = await request<UploadedFileRecord[]>(`/files?userId=${userId}&limit=${limit}`)
+  return res.data || []
 }
 
 export async function updateProfileApi(
@@ -216,6 +265,10 @@ export interface ConversationRecord {
   userId: number
   conversationId: string
   timestamp: string
+  attachmentName?: string
+  attachmentType?: 'image' | 'file'
+  attachmentData?: string
+  conversationTitle?: string
 }
 
 /**
@@ -227,12 +280,53 @@ export async function fetchConversationsApi(userId: number, limit = 50): Promise
 }
 
 /** POST /api/conversations/title —— 分析整体对话并返回简化标题 */
-export async function generateConversationTitleApi(conversationContext: string): Promise<string> {
+export async function generateConversationTitleApi(
+  userId: number,
+  conversationId: string,
+  conversationContext: string
+): Promise<string> {
   const res = await request<{ title: string }>('/conversations/title', {
     method: 'POST',
-    body: JSON.stringify({ conversationContext }),
+    body: JSON.stringify({ userId, conversationId, conversationContext }),
   })
   return res.data?.title?.trim() || '新对话'
+}
+
+export async function submitLearningResultApi(
+  userId: number,
+  conversationId: string,
+  file: File,
+  content: string
+): Promise<number> {
+  const res = await request<{ submissionId: number }>('/submissions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+    body: JSON.stringify({
+      conversationId,
+      fileName: file.name,
+      fileSize: file.size,
+      content,
+    }),
+  })
+  return res.data.submissionId
+}
+
+export async function fetchSubmissionApi(userId: number, submissionId: number): Promise<SubmissionDetail> {
+  const res = await request<SubmissionDetail>(`/submissions/${submissionId}`, {
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+  })
+  return res.data
+}
+
+export async function fetchConversationSubmissionsApi(
+  userId: number,
+  conversationId: string
+): Promise<SubmissionDetail[]> {
+  const res = await request<SubmissionDetail[]>(
+    `/conversations/${encodeURIComponent(conversationId)}/submissions`,
+    { headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) } }
+  )
+  return res.data || []
 }
 
 /**

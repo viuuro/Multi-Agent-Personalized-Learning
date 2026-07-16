@@ -1,0 +1,17 @@
+[
+  {"message":"请给我生成一份学习计划","profile":{},"intent":"PLAN_CREATE","action":"none","clarify":true},
+  {"message":"请生成一份 Java 并发学习计划","profile":{},"intent":"PLAN_CREATE","action":"create","clarify":false},
+  {"message":"重新生成一份学习计划","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"full_regenerate","clarify":false},
+  {"message":"把第三周改成线程池实战","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"modify_week","weeks":[3],"clarify":false},
+  {"message":"整体计划难度再高一点","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"adjust_difficulty","clarify":false},
+  {"message":"调整一下计划难度","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"none","clarify":true},
+  {"message":"把学习计划节奏放慢一点，我每天只有一小时","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"adjust_pace","clarify":false},
+  {"message":"把计划方向换成数据分析","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"change_direction","clarify":false},
+  {"message":"替换一下第三周的学习资源","profile":{"interestAreas":["Java"]},"intent":"PLAN_REVISE","action":"adjust_resources","weeks":[3],"clarify":false},
+  {"message":"我想系统学习 Rust，并在一个月内完成命令行项目","profile":{},"intent":"PROFILE_DISCOVERY","action":"none","clarify":false},
+  {"message":"请评价我上传的学习成果","profile":{},"intent":"SUBMISSION_REVIEW","action":"none","clarify":false},
+  {"message":"最近的学习进度怎么样","profile":{},"intent":"PROGRESS_REVIEW","action":"none","clarify":false},
+  {"message":"推荐两门高质量的视频课程","profile":{},"intent":"RESOURCE_QUERY","action":"none","clarify":false},
+  {"message":"Java 中 volatile 为什么不能保证复合操作原子性？","profile":{},"intent":"STUDY_QA","action":"none","clarify":false},
+  {"message":"你好","profile":{},"intent":"CASUAL","action":"none","clarify":false}
+]

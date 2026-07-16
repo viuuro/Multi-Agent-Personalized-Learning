@@ -1,5 +1,6 @@
 package com.edu.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -27,6 +28,11 @@ public class Conversation {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    /** AI 上下文使用的完整内容（例如文件解析文本），不返回给前端展示。 */
+    @JsonIgnore
+    @Column(name = "ai_content", columnDefinition = "MEDIUMTEXT")
+    private String aiContent;
+
     /** 消息角色：user（用户）或 assistant（AI助手） */
     @Column(length = 50)
     private String role;
@@ -38,6 +44,22 @@ public class Conversation {
     /** 会话 ID，同一轮对话共享同一个 ID，用于关联多条消息 */
     @Column(name = "conversation_id", length = 64)
     private String conversationId;
+
+    /** 附件名称；普通文本消息为空。 */
+    @Column(name = "attachment_name", length = 255)
+    private String attachmentName;
+
+    /** 附件类型：image/file。 */
+    @Column(name = "attachment_type", length = 20)
+    private String attachmentType;
+
+    /** 图片使用 Data URL 保存，刷新后仍可恢复预览。 */
+    @Column(name = "attachment_data", columnDefinition = "MEDIUMTEXT")
+    private String attachmentData;
+
+    /** 由会话元数据表补充，仅用于 API 返回。 */
+    @Transient
+    private String conversationTitle;
 
     /** 消息时间戳，不可为空 */
     @Column(nullable = false)
@@ -65,11 +87,26 @@ public class Conversation {
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
 
+    public String getAiContent() { return aiContent; }
+    public void setAiContent(String aiContent) { this.aiContent = aiContent; }
+
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
 
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public String getAttachmentName() { return attachmentName; }
+    public void setAttachmentName(String attachmentName) { this.attachmentName = attachmentName; }
+
+    public String getAttachmentType() { return attachmentType; }
+    public void setAttachmentType(String attachmentType) { this.attachmentType = attachmentType; }
+
+    public String getAttachmentData() { return attachmentData; }
+    public void setAttachmentData(String attachmentData) { this.attachmentData = attachmentData; }
+
+    public String getConversationTitle() { return conversationTitle; }
+    public void setConversationTitle(String conversationTitle) { this.conversationTitle = conversationTitle; }
 
     public LocalDateTime getTimestamp() { return timestamp; }
     public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }

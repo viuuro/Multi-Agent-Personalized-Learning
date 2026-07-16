@@ -70,7 +70,7 @@
           </div>
           <div v-if="uploadedFiles.length === 0" class="file-empty">暂无上传记录</div>
           <div v-else class="file-list">
-            <div v-for="(file, i) in uploadedFiles" :key="i" class="file-item">
+            <div v-for="file in uploadedFiles" :key="file.id" class="file-item">
               <UiIcon name="file" />
               <span class="file-name">{{ file.name }}</span>
               <span class="file-time">{{ file.time }}</span>
@@ -191,11 +191,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from './stores/authStore'
 import { useChatStore } from './stores/chatStore'
 import type { Message } from './stores/chatStore'
-import { deleteAccountApi, fetchConversationsApi, fetchLearningActivityApi } from './services/api'
+import { deleteAccountApi, fetchConversationsApi, fetchLearningActivityApi, fetchUploadedFilesApi } from './services/api'
 import type { AuthUser, ConversationRecord, DailyLearningActivity } from './services/api'
 import { fallbackConversationTitle, readConversationTitles } from './services/conversationTitles'
 import ChatView from './views/ChatView.vue'
@@ -209,11 +209,16 @@ const authStore = useAuthStore()
 const chatStore = useChatStore()
 const showAccountModal = ref(false)
 const showAuth = ref(!authStore.isLoggedIn)
-const activeHeaderTab = ref<'data' | 'files'>('data')
+const HEADER_TAB_KEY = 'edu-agent-header-tab'
+const activeHeaderTab = ref<'data' | 'files'>(
+  localStorage.getItem(HEADER_TAB_KEY) === 'files' ? 'files' : 'data'
+)
+watch(activeHeaderTab, value => localStorage.setItem(HEADER_TAB_KEY, value))
 
 // 贡献图数据（16周 = 112天）
 type ContributionDay = DailyLearningActivity & { count: number }
 const contributionData = ref<ContributionDay[]>([])
+const uploadedFiles = ref<{ id: number; name: string; time: string }[]>([])
 
 async function loadContributionData() {
   const userId = authStore.user?.id
@@ -236,6 +241,29 @@ async function loadContributionData() {
 
 function handleActivityUpdated() {
   void loadContributionData()
+}
+
+async function loadUploadedFiles() {
+  const userId = authStore.user?.id
+  if (!userId) {
+    uploadedFiles.value = []
+    return
+  }
+  try {
+    const files = await fetchUploadedFilesApi(userId, 50)
+    uploadedFiles.value = files.map(file => ({
+      id: file.id,
+      name: file.fileName,
+      time: `${formatConversationTime(new Date(file.uploadedAt).getTime())} · ${file.purpose === 'SUBMISSION' ? '学习成果' : '对话文件'}`,
+    }))
+  } catch (err) {
+    console.warn('历史文件加载失败', err)
+    uploadedFiles.value = []
+  }
+}
+
+function handleFileHistoryUpdated() {
+  void loadUploadedFiles()
 }
 
 interface ConversationSession {
@@ -280,11 +308,17 @@ async function loadConversationSessions() {
         role: item.role as 'user' | 'assistant',
         content: item.content,
         timestamp: new Date(item.timestamp).getTime(),
+        ...(item.attachmentType === 'image' && item.attachmentData
+          ? { imageUrl: item.attachmentData, imageData: item.attachmentData }
+          : {}),
       }))
       const updatedAt = Math.max(...messages.map(message => message.timestamp))
+      const persistedTitle = items
+        .find(item => item.conversationTitle?.trim() && item.conversationTitle.trim() !== '新对话')
+        ?.conversationTitle?.trim()
       return {
         id,
-        title: savedTitles[id] || fallbackConversationTitle(messages),
+        title: persistedTitle || savedTitles[id] || fallbackConversationTitle(messages),
         timeLabel: formatConversationTime(updatedAt),
         updatedAt,
         messages,
@@ -336,20 +370,20 @@ function handleConversationTitleUpdated(event: Event) {
 
 onMounted(() => {
   void loadContributionData()
+  void loadUploadedFiles()
   void loadConversationSessions()
   window.addEventListener('learning-activity-updated', handleActivityUpdated)
+  window.addEventListener('file-history-updated', handleFileHistoryUpdated)
   window.addEventListener('conversation-list-updated', handleConversationListUpdated)
   window.addEventListener('conversation-title-updated', handleConversationTitleUpdated)
 })
 
 onUnmounted(() => {
   window.removeEventListener('learning-activity-updated', handleActivityUpdated)
+  window.removeEventListener('file-history-updated', handleFileHistoryUpdated)
   window.removeEventListener('conversation-list-updated', handleConversationListUpdated)
   window.removeEventListener('conversation-title-updated', handleConversationTitleUpdated)
 })
-
-// 历史文件
-const uploadedFiles = ref<{ name: string; time: string }[]>([])
 
 // 退出登录确认
 const showLogoutDialog = ref(false)
@@ -392,6 +426,7 @@ function onLoggedIn(user: AuthUser) {
   showAuth.value = false
   hasInitializedConversations = false
   void loadContributionData()
+  void loadUploadedFiles()
   void loadConversationSessions()
 }
 </script>

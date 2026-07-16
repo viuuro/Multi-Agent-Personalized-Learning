@@ -48,6 +48,12 @@ public class SubmissionDetail {
     /** 提交者用户 ID */
     private Long userId;
 
+    private String conversationId;
+
+    private String fileName;
+
+    private Long fileSize;
+
     /** 提交的成果内容 */
     private String content;
 
@@ -75,6 +81,9 @@ public class SubmissionDetail {
         dto.setId(submission.getId());
         dto.setTaskId(submission.getTaskId());
         dto.setUserId(submission.getUserId());
+        dto.setConversationId(submission.getConversationId());
+        dto.setFileName(submission.getFileName());
+        dto.setFileSize(submission.getFileSize());
         dto.setContent(submission.getContent());
         dto.setSubmissionTime(submission.getSubmissionTime());
         dto.setStatus(submission.getStatus());
@@ -85,6 +94,8 @@ public class SubmissionDetail {
             evalDto.setScore(evaluation.getScore());
             evalDto.setAnalysis(evaluation.getAnalysis());
             evalDto.setSuggestion(evaluation.getSuggestion());
+            evalDto.setWeaknessesJson(evaluation.getWeaknessesJson());
+            evalDto.setRecommendedActionsJson(evaluation.getRecommendedActionsJson());
             evalDto.setEvaluationTime(evaluation.getEvaluationTime());
             dto.setEvaluation(evalDto);
         }
@@ -101,6 +112,15 @@ public class SubmissionDetail {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
+    public Long getFileSize() { return fileSize; }
+    public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
@@ -135,6 +155,8 @@ public class SubmissionDetail {
         private String analysis;
         /** AI 改进建议 */
         private String suggestion;
+        private String weaknessesJson;
+        private String recommendedActionsJson;
         /** AI 评价完成时间 */
         private LocalDateTime evaluationTime;
 
@@ -149,6 +171,11 @@ public class SubmissionDetail {
 
         public String getSuggestion() { return suggestion; }
         public void setSuggestion(String suggestion) { this.suggestion = suggestion; }
+
+        public String getWeaknessesJson() { return weaknessesJson; }
+        public void setWeaknessesJson(String weaknessesJson) { this.weaknessesJson = weaknessesJson; }
+        public String getRecommendedActionsJson() { return recommendedActionsJson; }
+        public void setRecommendedActionsJson(String recommendedActionsJson) { this.recommendedActionsJson = recommendedActionsJson; }
 
         public LocalDateTime getEvaluationTime() { return evaluationTime; }
         public void setEvaluationTime(LocalDateTime evaluationTime) { this.evaluationTime = evaluationTime; }

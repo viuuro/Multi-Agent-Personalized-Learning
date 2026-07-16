@@ -27,7 +27,12 @@ import type { LearningPlan } from './api'
  *   4. 每收到一个 SSE 事件，分发到对应 handler 更新 UI
  *   5. 连接中断时记录错误并结束 streaming
  */
-export function sendMessage(message: string, imageData?: string, userId?: number) {
+export function sendMessage(
+  message: string,
+  imageData?: string,
+  userId?: number,
+  metadata?: { displayMessage?: string; attachmentName?: string; attachmentType?: 'image' | 'file' }
+) {
   const chatStore = useChatStore()
   const profileStore = useProfileStore()
 
@@ -45,6 +50,9 @@ export function sendMessage(message: string, imageData?: string, userId?: number
       imageData: imageData || undefined,
       // 用户 ID，用于画像按用户隔离
       userId: userId || undefined,
+      displayMessage: metadata?.displayMessage || message,
+      attachmentName: metadata?.attachmentName,
+      attachmentType: metadata?.attachmentType,
     }),
   })
     .then(async (response) => {

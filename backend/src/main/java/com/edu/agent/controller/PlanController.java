@@ -5,6 +5,7 @@ import com.edu.agent.model.LearningPlan;
 import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.repository.LearningPlanRepository;
 import com.edu.agent.service.AgentOrchestrationService;
+import com.edu.agent.service.LearningPlanVersionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 
 /**
  * 计划控制器 —— 生成 / 读取 / 保存 学习计划
@@ -28,12 +30,15 @@ public class PlanController {
 
     private final AgentOrchestrationService orchestrationService;
     private final LearningPlanRepository planRepository;
+    private final LearningPlanVersionService planVersionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PlanController(AgentOrchestrationService orchestrationService,
-                          LearningPlanRepository planRepository) {
+                          LearningPlanRepository planRepository,
+                          LearningPlanVersionService planVersionService) {
         this.orchestrationService = orchestrationService;
         this.planRepository = planRepository;
+        this.planVersionService = planVersionService;
     }
 
     /** 生成计划并持久化 */
@@ -47,11 +52,25 @@ public class PlanController {
         log.info(">>> POST /api/plan —— 触发多智能体协同, userId={}, conversationId={}",
                 userId, conversationId);
 
-        LearningPlan plan = orchestrationService.generatePlan(userId, conversationId);
+        LearningPlanEntity existing = planVersionService.getCurrentEntity(userId, conversationId).orElse(null);
+        boolean hasExistingPlan = existing != null;
+        LearningPlan plan = hasExistingPlan
+                ? orchestrationService.generatePlan(
+                        userId, conversationId, existing.getPlanJson(),
+                        "结合当前画像与最新对话重新生成计划，保留仍有价值的安排",
+                        "full_regenerate", "{}")
+                : orchestrationService.generatePlan(userId, conversationId);
         log.info(">>> 计划生成完成。共 {} 周。", plan.getWeeks().size());
 
         // 持久化到数据库
-        savePlanToDb(userId, conversationId, plan);
+        try {
+            planVersionService.saveNewVersion(userId, conversationId, plan,
+                    hasExistingPlan ? "full_regenerate" : "create",
+                    hasExistingPlan ? "用户通过按钮重新生成计划" : "用户首次生成计划");
+        } catch (Exception e) {
+            log.error("计划持久化失败: {}", e.getMessage(), e);
+            return ApiResponse.error(500, "计划已生成，但持久化失败，请稍后重试");
+        }
 
         return ApiResponse.success("多智能体协同完成，学习计划已生成", plan);
     }
@@ -87,15 +106,9 @@ public class PlanController {
 
         try {
             String planJson = objectMapper.writeValueAsString(planData);
-            LearningPlanEntity entity = planRepository
-                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
-                    .orElse(new LearningPlanEntity());
-            entity.setUserId(userId);
-            entity.setConversationId(conversationId);
-            entity.setPlanJson(planJson);
-            planRepository.save(entity);
-
             LearningPlan plan = objectMapper.readValue(planJson, LearningPlan.class);
+            planVersionService.saveNewVersion(userId, conversationId, plan,
+                    "manual_edit", "用户在计划编辑器中保存修改");
             return ApiResponse.success("计划已保存", plan);
         } catch (Exception e) {
             log.error("保存计划失败: {}", e.getMessage());
@@ -103,20 +116,11 @@ public class PlanController {
         }
     }
 
-    /** 将计划存入数据库（生成后自动调用） */
-    private void savePlanToDb(Long userId, String conversationId, LearningPlan plan) {
-        try {
-            String planJson = objectMapper.writeValueAsString(plan);
-            LearningPlanEntity entity = planRepository
-                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
-                    .orElse(new LearningPlanEntity());
-            entity.setUserId(userId);
-            entity.setConversationId(conversationId);
-            entity.setPlanJson(planJson);
-            planRepository.save(entity);
-            log.info(">>> 计划已持久化到 MySQL, userId={}", userId);
-        } catch (Exception e) {
-            log.warn("计划持久化失败（不影响返回）: {}", e.getMessage());
-        }
+    /** 获取对话内计划版本历史，便于回溯智能调整。 */
+    @GetMapping("/plan/history")
+    public ApiResponse<List<LearningPlanEntity>> getPlanHistory(
+            @RequestParam Long userId,
+            @RequestParam String conversationId) {
+        return ApiResponse.success("ok", planVersionService.getHistory(userId, conversationId));
     }
 }

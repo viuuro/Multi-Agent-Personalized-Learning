@@ -20,6 +20,7 @@ __pycache__/
 
 # ==================== Java / Spring Boot ====================
 backend/target/
+backend/data/
 backend/*.class
 backend/*.jar
 backend/*.war

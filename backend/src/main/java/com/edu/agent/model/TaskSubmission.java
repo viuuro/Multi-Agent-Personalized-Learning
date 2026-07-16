@@ -60,6 +60,16 @@ public class TaskSubmission {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    /** 所属对话，用于切换对话时恢复各自的成果与评分。 */
+    @Column(name = "conversation_id", length = 64)
+    private String conversationId;
+
+    @Column(name = "file_name", length = 255)
+    private String fileName;
+
+    @Column(name = "file_size")
+    private Long fileSize;
+
     /** 提交的成果内容（文本描述、链接等），AI 将此内容与任务描述对比进行评分 */
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
@@ -95,6 +105,15 @@ public class TaskSubmission {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
+    public Long getFileSize() { return fileSize; }
+    public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }

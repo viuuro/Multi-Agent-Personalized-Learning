@@ -95,16 +95,24 @@ public class AgentOrchestrationService {
      * @return LearningPlan 包含 4 周计划的完整学习计划对象
      */
     public LearningPlan generatePlan(Long userId, String conversationId) {
-        return generatePlan(userId, conversationId, "", "");
+        return generatePlan(userId, conversationId, "", "", "create", "{}");
     }
 
     /** 根据当前计划和用户最新要求生成修订版计划。 */
     public LearningPlan generatePlan(Long userId, String conversationId,
                                      String existingPlanJson, String revisionRequest) {
+        return generatePlan(userId, conversationId, existingPlanJson, revisionRequest,
+                "full_regenerate", "{}");
+    }
+
+    public LearningPlan generatePlan(Long userId, String conversationId,
+                                     String existingPlanJson, String revisionRequest,
+                                     String revisionAction, String revisionScopeJson) {
         if (mockMode) {
             return generatePlanMock(userId, conversationId);
         }
-        return generatePlanReal(userId, conversationId, existingPlanJson, revisionRequest);
+        return generatePlanReal(userId, conversationId, existingPlanJson, revisionRequest,
+                revisionAction, revisionScopeJson);
     }
 
     /**
@@ -120,7 +128,8 @@ public class AgentOrchestrationService {
      * @return LearningPlan 包含 4 周计划的完整学习计划对象
      */
     private LearningPlan generatePlanReal(Long userId, String conversationId,
-                                          String existingPlanJson, String revisionRequest) {
+                                          String existingPlanJson, String revisionRequest,
+                                          String revisionAction, String revisionScopeJson) {
         log.info("========== 多智能体协同开始 (Python AI) ==========");
         // 获取当前用户画像
         UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
@@ -135,7 +144,9 @@ public class AgentOrchestrationService {
                             ? profile.getProfileJson() : "",
                     "conversation_context", conversationContext,
                     "existing_plan_json", existingPlanJson != null ? existingPlanJson : "",
-                    "revision_request", revisionRequest != null ? revisionRequest : ""
+                    "revision_request", revisionRequest != null ? revisionRequest : "",
+                    "revision_action", revisionAction != null ? revisionAction : "none",
+                    "revision_scope_json", revisionScopeJson != null ? revisionScopeJson : "{}"
             );
             String json = objectMapper.writeValueAsString(body);
 

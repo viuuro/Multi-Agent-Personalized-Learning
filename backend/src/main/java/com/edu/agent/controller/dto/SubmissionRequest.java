@@ -23,9 +23,25 @@ public class SubmissionRequest {
     /** 提交的成果内容（文本），AI 将据此进行评分和分析 */
     private String content;
 
+    /** 当前对话 ID；新前端以此解析计划和任务。 */
+    private String conversationId;
+
+    private String fileName;
+
+    private Long fileSize;
+
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
+    public Long getFileSize() { return fileSize; }
+    public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
 }

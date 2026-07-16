@@ -71,6 +71,11 @@ public class ChatService {
     private final AgentOrchestrationService orchestrationService;
     /** 学习计划持久化仓库 */
     private final LearningPlanRepository learningPlanRepository;
+    /** 对话标题等会话级元数据 */
+    private final ConversationSessionService conversationSessionService;
+    private final ProfileEvidenceService profileEvidenceService;
+    private final AgentDecisionService agentDecisionService;
+    private final LearningPlanVersionService planVersionService;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置的 HTTP 客户端，用于调用 Python AI 服务 */
@@ -91,12 +96,20 @@ public class ChatService {
                        MockAiService mockAiService,
                        AgentOrchestrationService orchestrationService,
                        LearningPlanRepository learningPlanRepository,
+                       ConversationSessionService conversationSessionService,
+                       ProfileEvidenceService profileEvidenceService,
+                       AgentDecisionService agentDecisionService,
+                       LearningPlanVersionService planVersionService,
                        @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.conversationRepository = conversationRepository;
         this.profileService = profileService;
         this.mockAiService = mockAiService;
         this.orchestrationService = orchestrationService;
         this.learningPlanRepository = learningPlanRepository;
+        this.conversationSessionService = conversationSessionService;
+        this.profileEvidenceService = profileEvidenceService;
+        this.agentDecisionService = agentDecisionService;
+        this.planVersionService = planVersionService;
         // MiMo API Key 只需要配置在 Python AI 服务中；Spring 默认始终调用 Python。
         // 只有显式设置 AI_MOCK_ENABLED=true 时才启用本地 Mock 模式。
         this.mockMode = mockMode;
@@ -119,7 +132,13 @@ public class ChatService {
      * @param conversationId 会话 ID（可选，首次对话为空时自动生成）
      * @return SseEmitter SSE 长连接对象，前端通过此连接接收流式数据
      */
-    public SseEmitter handleChat(String userMessage, String conversationId, String imageData, Long userId) {
+    public SseEmitter handleChat(String userMessage,
+                                 String displayMessage,
+                                 String conversationId,
+                                 String imageData,
+                                 String attachmentName,
+                                 String attachmentType,
+                                 Long userId) {
         // Step 1: 生成会话 ID（如果前端未提供）
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -128,34 +147,58 @@ public class ChatService {
         // 创建 SSE 发射器（0L = 不设置超时，由后端控制完成时机）
         SseEmitter emitter = new SseEmitter(0L);
 
-        // Step 2: 保存用户消息到 MySQL
-        saveMessage(userMessage, "user", convId, userId);
+        // Step 2: 保存用户消息到数据库。文件解析全文只写入 aiContent，不污染历史对话展示。
+        if (userId != null) {
+            conversationSessionService.ensureSession(userId, convId);
+        }
+        String visibleMessage = displayMessage == null || displayMessage.isBlank()
+                ? userMessage : displayMessage;
+        Conversation userRecord = saveMessage(visibleMessage, userMessage, "user", convId, userId,
+                attachmentName, attachmentType,
+                "image".equals(attachmentType) ? imageData : null);
 
         // Step 3: 提取画像 + 生成回复
         UserProfile extractedProfile;
         String fullResponse;
         String planAction = "none";
+        String planRevisionRequest = userMessage;
+        String revisionScopeJson = "{}";
+        Map<String, Object> result;
         if (mockMode) {
             // Mock 模式：使用预设数据
             extractedProfile = mockAiService.mockProfileExtraction(userMessage);
             fullResponse = mockAiService.mockChatResponse(userMessage, extractedProfile);
             planAction = detectPlanAction(userMessage);
+            result = buildMockDecisionResult(userMessage, convId, planAction, fullResponse);
         } else {
             // 真实模式：调用 Python AI 服务（FastAPI + LangChain → MiMo-v2.5 API）
-            Map<String, Object> result = callPythonChat(userMessage, imageData, userId, convId);
+            result = callPythonChat(userMessage, imageData, userId, convId);
             fullResponse = String.valueOf(result.getOrDefault("response", ""));
             String profileJson = String.valueOf(result.getOrDefault("profile_json", "{}"));
             planAction = String.valueOf(result.getOrDefault("plan_action", "none"));
+            planRevisionRequest = String.valueOf(result.getOrDefault(
+                    "plan_revision_request", userMessage));
+            revisionScopeJson = String.valueOf(result.getOrDefault("revision_scope_json", "{}"));
             // 将 Python 返回的 JSON 解析为 UserProfile 对象
             extractedProfile = profileService.parseProfileJson(profileJson);
         }
 
         // Step 4: 更新用户画像到 MySQL
-        UserProfile savedProfile = profileService.updateProfile(extractedProfile, userId, convId);
+        String evidenceJson = String.valueOf(result.getOrDefault("profile_evidence_json", "[]"));
+        java.util.Set<String> supportedDimensions = profileEvidenceService.persist(
+                userId, convId, userRecord == null ? null : userRecord.getId(), evidenceJson);
+        UserProfile savedProfile = mockMode
+                ? profileService.updateProfile(extractedProfile, userId, convId)
+                : profileService.updateProfileWithSupportedDimensions(
+                        extractedProfile, userId, convId, supportedDimensions);
+        persistIntelligenceState(userId, convId,
+                userRecord == null ? null : userRecord.getId(), result);
 
         // Step 5-7: 在新线程中执行 SSE 流式推送（避免阻塞主线程）
         final String finalResponse = fullResponse;
         final String finalPlanAction = planAction;
+        final String finalPlanRevisionRequest = planRevisionRequest;
+        final String finalRevisionScopeJson = revisionScopeJson;
         new Thread(() -> {
             try {
                 // Step 5a: 推送会话 ID（前端用于关联后续消息）
@@ -175,13 +218,16 @@ public class ChatService {
                 sendSSE(emitter, "profile_update", profileJson);
 
                 // 用户在对话中明确要求修订计划时，直接生成、持久化并推送新计划。
-                if ("regenerate".equals(finalPlanAction)) {
-                    LearningPlan updatedPlan = regenerateAndPersistPlan(userId, convId, userMessage);
+                if (isPlanAction(finalPlanAction)) {
+                    LearningPlan updatedPlan = regenerateAndPersistPlan(
+                            userId, convId, finalPlanRevisionRequest,
+                            finalPlanAction, finalRevisionScopeJson);
                     sendSSE(emitter, "plan_update", objectMapper.writeValueAsString(updatedPlan));
                 }
 
                 // Step 7b: 保存 AI 回复到 MySQL
-                saveMessage(finalResponse, "assistant", convId, userId);
+                saveMessage(finalResponse, finalResponse, "assistant", convId, userId,
+                        null, null, null);
                 // Step 7a: 推送完成信号（前端用于结束流式状态）
                 sendSSE(emitter, "done", "");
                 // 关闭 SSE 连接
@@ -220,6 +266,22 @@ public class ChatService {
                     .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
                     .map(LearningPlanEntity::getPlanJson)
                     .orElse(""));
+            conversationSessionService.findSession(userId, conversationId).ifPresent(session -> {
+                body.put("memory_summary", valueOrEmpty(session.getMemorySummary()));
+                body.put("temporary_state_json", valueOrEmpty(session.getTemporaryStateJson()));
+                body.put("temporary_state_updated_at", session.getUpdatedAt() == null
+                        ? "" : session.getUpdatedAt().toString());
+                body.put("dialogue_state", valueOrEmpty(session.getDialogueState()));
+                body.put("pending_question", valueOrEmpty(session.getPendingQuestion()));
+            });
+            body.putIfAbsent("memory_summary", "");
+            body.putIfAbsent("temporary_state_json", "{}");
+            body.putIfAbsent("temporary_state_updated_at", "");
+            body.putIfAbsent("dialogue_state", "");
+            body.putIfAbsent("pending_question", "");
+            body.put("profile_evidence_json",
+                    profileEvidenceService.buildEvidenceJson(userId, conversationId));
+            body.put("recent_responses_json", buildRecentAssistantResponses(userId, conversationId));
             if (imageData != null && !imageData.isEmpty()) {
                 // 有图片时，传递图片数据
                 log.info(">>> 传递图片数据给 Python AI，imageData 长度: {}", imageData.length());
@@ -235,7 +297,7 @@ public class ChatService {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(pythonAiUrl + "/chat"))  // Python AI 服务地址
                     .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(60))  // 请求超时 60 秒（LLM 调用较慢）
+                    .timeout(Duration.ofSeconds(150))
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
@@ -255,10 +317,10 @@ public class ChatService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Python AI 调用中断，降级到 Mock", e);
-            return fallbackToMock(userMessage);
+            return fallbackToMock(userMessage, userId, conversationId);
         } catch (Exception e) {
             log.error("Python AI 调用失败，降级到 Mock: {}", e.getMessage());
-            return fallbackToMock(userMessage);
+            return fallbackToMock(userMessage, userId, conversationId);
         }
     }
 
@@ -268,26 +330,26 @@ public class ChatService {
      * @param userMessage 用户输入的消息
      * @return Map { "response": Mock回复, "profile_json": Mock画像JSON }
      */
-    private Map<String, Object> fallbackToMock(String userMessage) {
+    private Map<String, Object> fallbackToMock(String userMessage, Long userId, String conversationId) {
         UserProfile profile = mockAiService.mockProfileExtraction(userMessage);
         String response = mockAiService.mockChatResponse(userMessage, profile);
+        Map<String, Object> result = buildMockDecisionResult(
+                userMessage, conversationId, detectPlanAction(userMessage), response);
         try {
-            return Map.of(
-                    "response", response,
-                    "profile_json", objectMapper.writeValueAsString(Map.of(
+            result.put("profile_json", objectMapper.writeValueAsString(Map.of(
                             "knowledgeBase", profile.getKnowledgeBase(),
                             "cognitiveStyle", profile.getCognitiveStyle(),
                             "weaknessPoints", profile.getWeaknessPoints(),
                             "learningPace", profile.getLearningPace(),
                             "interestAreas", profile.getInterestAreas(),
                             "shortTermGoal", profile.getShortTermGoal()
-                    )),
-                    "plan_action", detectPlanAction(userMessage)
-            );
+                    )));
         } catch (Exception e) {
-            return Map.of("response", response, "profile_json", "{}",
-                    "plan_action", detectPlanAction(userMessage));
+            result.put("profile_json", "{}");
         }
+        conversationSessionService.findSession(userId, conversationId).ifPresent(session ->
+                result.put("memory_summary", valueOrEmpty(session.getMemorySummary())));
+        return result;
     }
 
     /** 根据当前完整对话生成适合展示在顶栏的简短标题。 */
@@ -347,15 +409,18 @@ public class ChatService {
         try {
             List<Conversation> recent = new ArrayList<>(conversationRepository
                     .findByUserIdAndConversationIdOrderByTimestampDesc(userId, conversationId));
-            if (recent.size() > 40) {
-                recent = new ArrayList<>(recent.subList(0, 40));
+            if (recent.size() > 16) {
+                recent = new ArrayList<>(recent.subList(0, 16));
             }
             Collections.reverse(recent);
             StringBuilder context = new StringBuilder();
             for (Conversation conversation : recent) {
                 String role = "assistant".equals(conversation.getRole()) ? "智能体" : "用户";
+                String contextContent = conversation.getAiContent() == null
+                        || conversation.getAiContent().isBlank()
+                        ? conversation.getContent() : conversation.getAiContent();
                 context.append(role).append("：")
-                        .append(conversation.getContent()).append('\n');
+                        .append(contextContent).append('\n');
             }
             return context.toString().trim();
         } catch (Exception e) {
@@ -371,29 +436,111 @@ public class ChatService {
         }
         String text = message.replaceAll("\\s+", "");
         boolean mentionsPlan = text.contains("计划");
-        boolean asksForChange = text.matches(".*(重新|更新|调整|修改|重做|改一下|再生成|换一份|换一个).*");
-        return mentionsPlan && asksForChange ? "regenerate" : "none";
+        if (text.matches(".*(调整|修改|替换|换).*(资源|课程|教程|视频|资料).*")
+                || text.matches(".*(资源|课程|教程|视频|资料).*(调整|修改|替换|换).*")) {
+            return "adjust_resources";
+        }
+        if (text.matches(".*第[一二三四1234]周.*")) return "modify_week";
+        if (mentionsPlan && text.matches(".*(难度|太难|太简单|更难|简单一点).*") ) {
+            return "adjust_difficulty";
+        }
+        if (mentionsPlan && text.matches(".*(节奏|周期|时间|快一点|慢一点).*") ) {
+            return "adjust_pace";
+        }
+        if (mentionsPlan && text.matches(".*(方向|主题|改学|换成|转到).*") ) {
+            return "change_direction";
+        }
+        if (mentionsPlan && text.matches(".*(重新|更新|调整|修改|重做|改一下|再生成|换一份|换一个).*") ) {
+            return "full_regenerate";
+        }
+        if (mentionsPlan && text.matches(".*(生成|制定|做一份|安排).*") ) return "create";
+        return "none";
     }
 
     /** 根据用户修订要求更新最近计划，并保存为当前版本。 */
     private LearningPlan regenerateAndPersistPlan(Long userId, String conversationId,
-                                                  String revisionRequest) {
-        LearningPlanEntity entity = learningPlanRepository
-                .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
-                .orElse(new LearningPlanEntity());
-        String existingPlanJson = entity.getPlanJson() != null ? entity.getPlanJson() : "";
+                                                  String revisionRequest,
+                                                  String revisionAction,
+                                                  String revisionScopeJson) {
+        LearningPlanEntity current = planVersionService.getCurrentEntity(userId, conversationId)
+                .orElse(null);
+        String existingPlanJson = current == null ? "" : current.getPlanJson();
         LearningPlan updatedPlan = orchestrationService.generatePlan(
-                userId, conversationId, existingPlanJson, revisionRequest);
+                userId, conversationId, existingPlanJson, revisionRequest,
+                revisionAction, revisionScopeJson);
         try {
-            entity.setUserId(userId);
-            entity.setConversationId(conversationId);
-            entity.setPlanJson(objectMapper.writeValueAsString(updatedPlan));
-            learningPlanRepository.save(entity);
-            log.info("对话触发的学习计划已更新, userId={}", userId);
+            planVersionService.saveNewVersion(userId, conversationId, updatedPlan,
+                    revisionAction, revisionRequest);
+            log.info("对话触发的学习计划已更新, userId={}, action={}", userId, revisionAction);
         } catch (Exception e) {
-            log.warn("对话触发的计划持久化失败: {}", e.getMessage());
+            log.error("对话触发的计划持久化失败: {}", e.getMessage(), e);
+            throw new IllegalStateException("学习计划更新后保存失败", e);
         }
         return updatedPlan;
+    }
+
+    private boolean isPlanAction(String action) {
+        return action != null && !action.isBlank() && !"none".equalsIgnoreCase(action);
+    }
+
+    private Map<String, Object> buildMockDecisionResult(String userMessage,
+                                                        String conversationId,
+                                                        String planAction,
+                                                        String response) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("response", response);
+        result.put("intent", isPlanAction(planAction)
+                ? ("create".equals(planAction) ? "PLAN_CREATE" : "PLAN_REVISE") : "STUDY_QA");
+        result.put("dialogue_state", isPlanAction(planAction) ? "REVISING_PLAN" : "ANSWERING");
+        result.put("plan_action", planAction);
+        result.put("requested_plan_action", planAction);
+        result.put("plan_revision_request", userMessage);
+        result.put("revision_scope_json", "{}");
+        result.put("needs_clarification", false);
+        result.put("clarifying_question", "");
+        result.put("temporary_state_json", "{}");
+        result.put("profile_evidence_json", "[]");
+        result.put("memory_summary", "用户最新诉求：" + userMessage);
+        result.put("quality_json", "{\"score\":70,\"issues\":[\"mock_fallback\"],\"reviewed\":false}");
+        return result;
+    }
+
+    private void persistIntelligenceState(Long userId,
+                                          String conversationId,
+                                          Long messageId,
+                                          Map<String, Object> result) {
+        String needsClarification = String.valueOf(result.getOrDefault("needs_clarification", false));
+        String pendingQuestion = Boolean.parseBoolean(needsClarification)
+                ? String.valueOf(result.getOrDefault("clarifying_question", "")) : "";
+        conversationSessionService.updateIntelligence(
+                userId,
+                conversationId,
+                String.valueOf(result.getOrDefault("memory_summary", "")),
+                String.valueOf(result.getOrDefault("temporary_state_json", "{}")),
+                String.valueOf(result.getOrDefault("intent", "STUDY_QA")),
+                String.valueOf(result.getOrDefault("dialogue_state", "ANSWERING")),
+                pendingQuestion,
+                String.valueOf(result.getOrDefault("quality_json", "{}")));
+        agentDecisionService.record(userId, conversationId, messageId, result);
+    }
+
+    private String buildRecentAssistantResponses(Long userId, String conversationId) {
+        try {
+            List<String> responses = conversationRepository
+                    .findByUserIdAndConversationIdOrderByTimestampDesc(userId, conversationId)
+                    .stream()
+                    .filter(item -> "assistant".equals(item.getRole()))
+                    .limit(3)
+                    .map(Conversation::getContent)
+                    .toList();
+            return objectMapper.writeValueAsString(responses);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private String valueOrEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     // ===== 工具方法 =====
@@ -428,13 +575,24 @@ public class ChatService {
      * @param conversationId  会话 ID
      * @param userId          用户 ID
      */
-    private void saveMessage(String content, String role, String conversationId, Long userId) {
+    private Conversation saveMessage(String content,
+                             String aiContent,
+                             String role,
+                             String conversationId,
+                             Long userId,
+                             String attachmentName,
+                             String attachmentType,
+                             String attachmentData) {
         Conversation conv = new Conversation();
         conv.setContent(content);
+        conv.setAiContent(aiContent);
         conv.setRole(role);
         conv.setConversationId(conversationId);
         conv.setUserId(userId);
+        conv.setAttachmentName(attachmentName);
+        conv.setAttachmentType(attachmentType);
+        conv.setAttachmentData(attachmentData);
         conv.setTimestamp(LocalDateTime.now());
-        conversationRepository.save(conv);  // 【Spring Boot/Data JPA】保存到 MySQL
+        return conversationRepository.save(conv);
     }
 }

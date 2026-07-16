@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 /**
  * 学习计划数据访问层
@@ -19,6 +20,9 @@ public interface LearningPlanRepository extends JpaRepository<LearningPlanEntity
 
     /** 查询指定对话最近一次保存的学习计划。 */
     Optional<LearningPlanEntity> findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+            Long userId, String conversationId);
+
+    List<LearningPlanEntity> findByUserIdAndConversationIdOrderByVersionNumberDesc(
             Long userId, String conversationId);
 
     /**

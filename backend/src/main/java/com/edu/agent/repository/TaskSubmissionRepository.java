@@ -63,6 +63,11 @@ public interface TaskSubmissionRepository extends JpaRepository<TaskSubmission, 
      */
     List<TaskSubmission> findByUserIdAndTaskIdOrderBySubmissionTimeDesc(Long userId, Long taskId);
 
+    List<TaskSubmission> findByUserIdAndConversationIdOrderBySubmissionTimeDesc(
+            Long userId, String conversationId);
+
+    List<TaskSubmission> findByStatus(String status);
+
     /**
      * 根据 ID 和用户 ID 查询提交记录（同时校验存在和用户所有权）
      *

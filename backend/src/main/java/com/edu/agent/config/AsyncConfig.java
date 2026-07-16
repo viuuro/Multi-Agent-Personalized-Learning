@@ -1,10 +1,13 @@
 package com.edu.agent.config;
 
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import java.util.concurrent.Executor;
 
 /**
- * 异步任务配置 —— 启用 Spring 的 @Async 异步方法执行支持
+ * 学习成果评分专用线程池配置。
  *
  * AI 评价是一个耗时操作（通常需要 5-30 秒），如果同步执行会阻塞 HTTP 响应。
  * 通过 @EnableAsync + @Async 注解，将 AI 评价调用改为异步执行：
@@ -28,9 +31,21 @@ import org.springframework.scheduling.annotation.EnableAsync;
  *
  *   ========== 【Spring Boot】在本类的使用 ==========
  *   - @Configuration: 声明为配置类
- *   - @EnableAsync: 启用 Spring 的异步方法执行能力
+ *   - 使用显式 Executor，避免同类内部调用导致 @Async 代理失效。
  */
 @Configuration  // 【Spring Boot】配置类注解，启动时自动加载
-@EnableAsync  // 【Spring Boot】启用 @Async 注解支持，自动创建异步线程池
 public class AsyncConfig {
+
+    @Bean(name = "submissionExecutor")
+    public Executor submissionExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("submission-eval-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(20);
+        executor.initialize();
+        return executor;
+    }
 }

@@ -247,8 +247,16 @@ import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
 import { sendMessage } from '../services/sse'
-import { fetchProfile, parseFileApi, fetchSavedPlanApi, generateConversationTitleApi } from '../services/api'
-import type { LearningPlan } from '../services/api'
+import {
+  fetchProfile,
+  parseFileApi,
+  fetchSavedPlanApi,
+  generateConversationTitleApi,
+  submitLearningResultApi,
+  fetchSubmissionApi,
+  fetchConversationSubmissionsApi,
+} from '../services/api'
+import type { LearningPlan, SubmissionDetail } from '../services/api'
 import { fallbackConversationTitle, readConversationTitles, saveConversationTitle } from '../services/conversationTitles'
 import RadarChart from '../components/RadarChart.vue'
 import PlanCard from '../components/PlanCard.vue'
@@ -275,13 +283,14 @@ const showEditModal = ref(false)
 const editPlanCardRef = ref<InstanceType<typeof PlanCard>>()
 const activeTab = ref<'profile' | 'plan'>('profile')
 const planHasData = ref(false)
-const sidebarOpen = ref(true)
+const SIDEBAR_OPEN_KEY = 'edu-agent-sidebar-open'
+const sidebarOpen = ref(localStorage.getItem(SIDEBAR_OPEN_KEY) !== 'false')
 const showPlusMenu = ref(false)
 const imageInputRef = ref<HTMLInputElement>()
 const fileInputRef = ref<HTMLInputElement>()
 
 // 暂存待发送的图片
-const stagedImage = ref<{ previewUrl: string; base64: string } | null>(null)
+const stagedImage = ref<{ previewUrl: string; base64: string; name: string } | null>(null)
 
 // 暂存待发送的文件
 const stagedFile = ref<{ file: File; name: string; size: string } | null>(null)
@@ -289,6 +298,34 @@ const stagedFile = ref<{ file: File; name: string; size: string } | null>(null)
 // ===== 文件提交 & AI 评分 =====
 const submitting = ref(false)
 const evaluationResult = ref<{ score: number; analysis: string; suggestion: string } | null>(null)
+
+function applySubmissionResult(detail?: SubmissionDetail) {
+  if (!detail) {
+    evaluationResult.value = null
+    return
+  }
+  if (detail.status === 'EVALUATED' && detail.evaluation) {
+    evaluationResult.value = {
+      score: detail.evaluation.score,
+      analysis: detail.evaluation.analysis,
+      suggestion: detail.evaluation.suggestion,
+    }
+    return
+  }
+  if (detail.status === 'ERROR') {
+    evaluationResult.value = {
+      score: 0,
+      analysis: detail.errorMessage || 'AI 评分失败',
+      suggestion: '请检查学习成果内容后重新提交。',
+    }
+    return
+  }
+  evaluationResult.value = {
+    score: 0,
+    analysis: 'AI 正在评分中，结果会自动保存。',
+    suggestion: '稍后重新打开当前对话即可查看评分结果。',
+  }
+}
 
 function getGreeting(): string {
   const now = new Date()
@@ -339,22 +376,35 @@ async function handleSend() {
   if (hasFile) {
     chatStore.startStreaming()
     try {
-      const result = await parseFileApi(stagedFile.value!.file)
+      const userId = authStore.user?.id
+      const conversationId = chatStore.conversationId
+      const result = await parseFileApi(stagedFile.value!.file, {
+        userId,
+        conversationId,
+        purpose: 'CHAT',
+      })
+      window.dispatchEvent(new Event('file-history-updated'))
       const fileContent = result.text || '（文件内容为空）'
       const msgContent = text || `请分析这个文件：${stagedFile.value!.name}`
+      const displayContent = `${msgContent}\n\n📄 文件：${stagedFile.value!.name}`
       const fullMessage = `${msgContent}\n\n---\n📄 文件：${stagedFile.value!.name}\n\n${fileContent}\n---`
 
       chatStore.addMessage({
         id: Date.now().toString(),
         role: 'user',
-        content: msgContent,
+        content: displayContent,
         timestamp: Date.now(),
       })
 
+      const attachmentName = stagedFile.value!.name
       inputText.value = ''
       clearStagedFile()
       scrollToBottom()
-      sendMessage(fullMessage, undefined, authStore.user?.id)
+      sendMessage(fullMessage, undefined, userId, {
+        displayMessage: displayContent,
+        attachmentName,
+        attachmentType: 'file',
+      })
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : '文件解析失败'
       chatStore.appendStreamContent(`\n\n[错误: ${errorMsg}]`)
@@ -367,6 +417,7 @@ async function handleSend() {
   const msgContent = text || '请分析这张图片'
   const imageUrl = stagedImage.value?.previewUrl
   const imageData = stagedImage.value?.base64
+  const imageName = stagedImage.value?.name
 
   chatStore.addMessage({
     id: Date.now().toString(),
@@ -379,7 +430,11 @@ async function handleSend() {
   inputText.value = ''
   stagedImage.value = null
   scrollToBottom()
-  sendMessage(msgContent, imageData, authStore.user?.id)
+  sendMessage(msgContent, imageData, authStore.user?.id, {
+    displayMessage: msgContent,
+    attachmentName: imageName,
+    attachmentType: hasImage ? 'image' : undefined,
+  })
 }
 
 async function handleGeneratePlan() {
@@ -410,7 +465,7 @@ function onImageSelected(e: Event) {
   const reader = new FileReader()
   reader.onload = (event) => {
     const base64Data = event.target?.result as string
-    stagedImage.value = { previewUrl: URL.createObjectURL(file), base64: base64Data }
+    stagedImage.value = { previewUrl: URL.createObjectURL(file), base64: base64Data, name: file.name }
   }
   reader.readAsDataURL(file)
   ;(e.target as HTMLInputElement).value = ''
@@ -463,35 +518,35 @@ async function handleSubmissionFileSelected(e: Event) {
 
   try {
     // 1. 解析文件内容
-    const result = await parseFileApi(file)
+    const conversationId = chatStore.conversationId
+    if (!conversationId) throw new Error('当前对话尚未初始化')
+    const result = await parseFileApi(file, {
+      userId: authStore.user?.id,
+      conversationId,
+      purpose: 'SUBMISSION',
+    })
+    window.dispatchEvent(new Event('file-history-updated'))
     const fileContent = result.text || '（文件内容为空）'
     const userId = authStore.user?.id
     if (!userId) { alert('请先登录'); return }
 
     // 2. 调用 AI 提交评分接口
-    const submissionRes = await fetch('/api/submissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
-      body: JSON.stringify({ taskId: 1, content: fileContent }),
-    })
-    const subResult = await submissionRes.json()
-    if (subResult.code !== 200) throw new Error(subResult.message || '提交失败')
-    const submissionId = subResult.data.submissionId
+    const submissionId = await submitLearningResultApi(
+      userId, conversationId, file, fileContent)
     window.dispatchEvent(new Event('learning-activity-updated'))
 
     // 3. 轮询获取 AI 评分结果
-    let retries = 10
+    let retries = 35
     while (retries > 0) {
       await new Promise(r => setTimeout(r, 2000))
-      const evalRes = await fetch(`/api/submissions/${submissionId}`, { headers: { 'X-User-Id': String(userId) } })
-      const evalData = await evalRes.json()
-      if (evalData.code === 200 && evalData.data?.status === 'EVALUATED' && evalData.data?.evaluation) {
-        evaluationResult.value = {
-          score: evalData.data.evaluation.score,
-          analysis: evalData.data.evaluation.analysis,
-          suggestion: evalData.data.evaluation.suggestion,
-        }
+      const detail = await fetchSubmissionApi(userId, submissionId)
+      if (detail.status === 'EVALUATED' && detail.evaluation) {
+        applySubmissionResult(detail)
         window.dispatchEvent(new Event('learning-activity-updated'))
+        break
+      }
+      if (detail.status === 'ERROR') {
+        applySubmissionResult(detail)
         break
       }
       retries--
@@ -606,14 +661,15 @@ function buildConversationTitleContext() {
 async function analyzeConversationTitle(conversationId: string, messageCount: number) {
   const context = buildConversationTitleContext()
   if (!context || !chatStore.messages.some(message => message.role === 'user')) return
+  const userId = authStore.user?.id
+  if (!userId) return
   let title = fallbackConversationTitle(chatStore.messages)
   try {
-    title = await generateConversationTitleApi(context)
+    title = await generateConversationTitleApi(userId, conversationId, context)
   } catch (err) {
     console.warn('会话标题分析失败，已使用本地简化标题', err)
   }
-  const userId = authStore.user?.id
-  if (userId) saveConversationTitle(userId, conversationId, title)
+  saveConversationTitle(userId, conversationId, title)
   titledMessageCounts.set(conversationId, messageCount)
   if (chatStore.conversationId === conversationId) {
     chatStore.setConversationTitle(title)
@@ -657,6 +713,7 @@ async function loadConversationWorkspace(conversationId: string) {
   profileStore.resetProfile()
   planHasData.value = false
   planCardRef.value?.setPlan(null)
+  evaluationResult.value = null
 
   try {
     const profile = await fetchProfile(userId, conversationId)
@@ -676,6 +733,15 @@ async function loadConversationWorkspace(conversationId: string) {
     }
   } catch (err) {
     console.warn('对话计划加载失败', err)
+  }
+
+  try {
+    const submissions = await fetchConversationSubmissionsApi(userId, conversationId)
+    if (version === workspaceLoadVersion && chatStore.conversationId === conversationId) {
+      applySubmissionResult(submissions[0])
+    }
+  } catch (err) {
+    console.warn('学习成果评分加载失败', err)
   }
 }
 
@@ -733,7 +799,10 @@ onUnmounted(() => {
   if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
 })
 
-watch(sidebarOpen, () => nextTick(syncSubmissionCenter))
+watch(sidebarOpen, value => {
+  localStorage.setItem(SIDEBAR_OPEN_KEY, String(value))
+  nextTick(syncSubmissionCenter)
+})
 </script>
 
 <style scoped>

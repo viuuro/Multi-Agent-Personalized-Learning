@@ -9,14 +9,14 @@ server:
   port: 8080
 
 # 【Spring Boot】数据源 + JPA 自动配置（spring-boot-starter-data-jpa）
-# 当前使用 H2 内存数据库（开发/测试环境），无需安装 MySQL。
-# 如需切换回 MySQL，取消 pom.xml 中 MySQL 依赖的注释，并取消下方 MySQL 配置的注释。
+# 默认使用 H2 文件数据库，数据写入 backend/data，重启不会丢失。
+# 生产环境可通过 DB_URL/DB_USER/DB_PASSWORD/DB_DRIVER 切换到 MySQL。
 spring:
   datasource:                                       # 【Spring Boot】DataSource 自动配置
-    url: jdbc:h2:mem:edu_agent;DB_CLOSE_DELAY=-1;MODE=MYSQL  # H2 内存数据库（兼容 MySQL 模式）
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    url: ${DB_URL:jdbc:h2:file:./data/edu_agent;MODE=MYSQL;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
   h2:                                               # 【Spring Boot】H2 Console 配置
     console:
       enabled: true                                 # 启用 H2 Web Console（访问 http://localhost:8080/h2-console）
@@ -25,18 +25,9 @@ spring:
     hibernate:
       ddl-auto: update   # 【Spring Boot】ddl-auto=update: Hibernate 自动建表/更新表结构
     show-sql: false      # 【Spring Boot】开发时可设为 true 在日志中查看 SQL
-    # 使用 H2 时无需指定 dialect，Hibernate 会自动检测
-    # 如需切换回 MySQL，请取消下方的注释并注释掉上面的 H2 配置：
-    #spring:
-    #  datasource:
-    #    url: jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
-    #    username: ${MYSQL_USER:root}
-    #    password: ${MYSQL_PASSWORD:123456}
-    #    driver-class-name: com.mysql.cj.jdbc.Driver
-    #  jpa:
-    #    properties:
-    #      hibernate:
-    #        dialect: org.hibernate.dialect.MySQL8Dialect
+    # MySQL 示例：
+    # DB_URL=jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # DB_USER=root  DB_PASSWORD=123456  DB_DRIVER=com.mysql.cj.jdbc.Driver
 
 # -----------------------------------------------------------
 # Python AI 服务地址
@@ -46,12 +37,7 @@ python:
     url: ${PYTHON_AI_URL:http://localhost:8000}
 
 # -----------------------------------------------------------
-# AI 大模型配置（OpenAI 兼容接口）
-# 用于任务成果的自动评分与分析
+# Spring 本地 Mock 开关。所有真实模型调用统一由 Python AI 服务访问 MiMo-v2.5。
 # -----------------------------------------------------------
 ai:
-  mock-enabled: ${AI_MOCK_ENABLED:false}            # 仅显式开启时使用本地 Mock；默认调用 Python AI
-  api-key: ${AI_API_KEY:}                         # API 密钥（不配置则使用 Mock 降级模式）
-  base-url: ${AI_BASE_URL:https://api.openai.com/v1}  # API 基础地址
-  model: ${AI_MODEL:gpt-4o}                      # 模型名称
-  timeout-seconds: ${AI_TIMEOUT:60}               # 请求超时秒数
+  mock-enabled: ${AI_MOCK_ENABLED:false}

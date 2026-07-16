@@ -44,6 +44,10 @@ public class AuthService {
     private final TaskRepository taskRepository;
     private final TaskSubmissionRepository taskSubmissionRepository;
     private final AiEvaluationRepository aiEvaluationRepository;
+    private final ConversationSessionRepository conversationSessionRepository;
+    private final UploadedFileRecordRepository uploadedFileRecordRepository;
+    private final ProfileEvidenceRepository profileEvidenceRepository;
+    private final AgentDecisionRecordRepository agentDecisionRecordRepository;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
     public AuthService(UserRepository userRepository,
@@ -52,7 +56,11 @@ public class AuthService {
                        LearningPlanRepository learningPlanRepository,
                        TaskRepository taskRepository,
                        TaskSubmissionRepository taskSubmissionRepository,
-                       AiEvaluationRepository aiEvaluationRepository) {
+                       AiEvaluationRepository aiEvaluationRepository,
+                       ConversationSessionRepository conversationSessionRepository,
+                       UploadedFileRecordRepository uploadedFileRecordRepository,
+                       ProfileEvidenceRepository profileEvidenceRepository,
+                       AgentDecisionRecordRepository agentDecisionRecordRepository) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.userProfileRepository = userProfileRepository;
@@ -60,6 +68,10 @@ public class AuthService {
         this.taskRepository = taskRepository;
         this.taskSubmissionRepository = taskSubmissionRepository;
         this.aiEvaluationRepository = aiEvaluationRepository;
+        this.conversationSessionRepository = conversationSessionRepository;
+        this.uploadedFileRecordRepository = uploadedFileRecordRepository;
+        this.profileEvidenceRepository = profileEvidenceRepository;
+        this.agentDecisionRecordRepository = agentDecisionRecordRepository;
     }
 
     /**
@@ -251,6 +263,12 @@ public class AuthService {
         // 6. 删除学习计划
         learningPlanRepository.deleteByUserId(userId);
         log.info(">>> 已删除用户 {} 的学习计划", userId);
+
+        // 7. 删除对话元数据与历史文件元数据
+        conversationSessionRepository.deleteByUserId(userId);
+        uploadedFileRecordRepository.deleteByUserId(userId);
+        profileEvidenceRepository.deleteByUserId(userId);
+        agentDecisionRecordRepository.deleteByUserId(userId);
 
         // 删除用户账户
         userRepository.delete(user);

@@ -61,6 +61,12 @@ public class AiEvaluation {
     @Column(name = "suggestion", columnDefinition = "TEXT")
     private String suggestion;
 
+    @Column(name = "weaknesses_json", columnDefinition = "TEXT")
+    private String weaknessesJson;
+
+    @Column(name = "recommended_actions_json", columnDefinition = "TEXT")
+    private String recommendedActionsJson;
+
     /** 评价时间，由 @PrePersist 自动设置 */
     @Column(name = "evaluation_time")
     private LocalDateTime evaluationTime;
@@ -90,6 +96,12 @@ public class AiEvaluation {
 
     public String getSuggestion() { return suggestion; }
     public void setSuggestion(String suggestion) { this.suggestion = suggestion; }
+
+    public String getWeaknessesJson() { return weaknessesJson; }
+    public void setWeaknessesJson(String weaknessesJson) { this.weaknessesJson = weaknessesJson; }
+
+    public String getRecommendedActionsJson() { return recommendedActionsJson; }
+    public void setRecommendedActionsJson(String recommendedActionsJson) { this.recommendedActionsJson = recommendedActionsJson; }
 
     public LocalDateTime getEvaluationTime() { return evaluationTime; }
     public void setEvaluationTime(LocalDateTime evaluationTime) { this.evaluationTime = evaluationTime; }

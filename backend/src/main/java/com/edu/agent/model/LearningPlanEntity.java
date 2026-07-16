@@ -29,6 +29,20 @@ public class LearningPlanEntity {
     @Column(name = "plan_json", columnDefinition = "TEXT", nullable = false)
     private String planJson;
 
+    /** 同一对话内递增的计划版本号。 */
+    @Column(name = "version_number", nullable = false, columnDefinition = "integer default 1")
+    private Integer versionNumber = 1;
+
+    /** create/manual_edit/modify_week/adjust_difficulty 等。 */
+    @Column(name = "revision_type", length = 40)
+    private String revisionType;
+
+    @Column(name = "revision_reason", length = 1000)
+    private String revisionReason;
+
+    @Column(name = "parent_plan_id")
+    private Long parentPlanId;
+
     /** 创建时间 */
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -61,6 +75,18 @@ public class LearningPlanEntity {
 
     public String getPlanJson() { return planJson; }
     public void setPlanJson(String planJson) { this.planJson = planJson; }
+
+    public Integer getVersionNumber() { return versionNumber; }
+    public void setVersionNumber(Integer versionNumber) { this.versionNumber = versionNumber; }
+
+    public String getRevisionType() { return revisionType; }
+    public void setRevisionType(String revisionType) { this.revisionType = revisionType; }
+
+    public String getRevisionReason() { return revisionReason; }
+    public void setRevisionReason(String revisionReason) { this.revisionReason = revisionReason; }
+
+    public Long getParentPlanId() { return parentPlanId; }
+    public void setParentPlanId(Long parentPlanId) { this.parentPlanId = parentPlanId; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

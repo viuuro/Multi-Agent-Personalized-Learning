@@ -31,20 +31,22 @@ public class PlanController {
     private final AgentOrchestrationService orchestrationService;
     private final LearningPlanRepository planRepository;
     private final LearningPlanVersionService planVersionService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public PlanController(AgentOrchestrationService orchestrationService,
                           LearningPlanRepository planRepository,
-                          LearningPlanVersionService planVersionService) {
+                          LearningPlanVersionService planVersionService,
+                          ObjectMapper objectMapper) {
         this.orchestrationService = orchestrationService;
         this.planRepository = planRepository;
         this.planVersionService = planVersionService;
+        this.objectMapper = objectMapper;
     }
 
     /** 生成计划并持久化 */
     @PostMapping("/plan")
     public ApiResponse<LearningPlan> generatePlan(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+        Long userId = requiredUserId(body);
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
         if (conversationId.isBlank()) {
             return ApiResponse.error(400, "缺少 conversationId");
@@ -95,18 +97,16 @@ public class PlanController {
     /** 保存用户编辑后的计划 */
     @PutMapping("/plan")
     public ApiResponse<LearningPlan> savePlan(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+        Long userId = requiredUserId(body);
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> planData = (Map<String, Object>) body.get("plan");
+        Object planData = body.get("plan");
 
-        if (planData == null || conversationId.isBlank()) {
+        if (!(planData instanceof Map<?, ?>) || conversationId.isBlank()) {
             return ApiResponse.error(400, "缺少 plan 数据或 conversationId");
         }
 
         try {
-            String planJson = objectMapper.writeValueAsString(planData);
-            LearningPlan plan = objectMapper.readValue(planJson, LearningPlan.class);
+            LearningPlan plan = objectMapper.convertValue(planData, LearningPlan.class);
             planVersionService.saveNewVersion(userId, conversationId, plan,
                     "manual_edit", "用户在计划编辑器中保存修改");
             return ApiResponse.success("计划已保存", plan);
@@ -122,5 +122,15 @@ public class PlanController {
             @RequestParam Long userId,
             @RequestParam String conversationId) {
         return ApiResponse.success("ok", planVersionService.getHistory(userId, conversationId));
+    }
+
+    private Long requiredUserId(Map<String, Object> body) {
+        Object value = body.get("userId");
+        if (value == null) throw new IllegalArgumentException("缺少 userId");
+        try {
+            return Long.valueOf(value.toString());
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("userId 格式不正确", exception);
+        }
     }
 }

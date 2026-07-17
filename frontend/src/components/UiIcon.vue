@@ -79,6 +79,23 @@
       <rect x="3" y="4" width="18" height="13" rx="2" />
       <path d="M8 21h8M12 17v4" />
     </template>
+    <template v-else-if="name === 'volume'">
+      <path d="M5 9.2h3.2L12.5 6v12l-4.3-3.2H5a1.5 1.5 0 0 1-1.5-1.5v-2.6A1.5 1.5 0 0 1 5 9.2Z" />
+      <path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+    </template>
+    <template v-else-if="name === 'play'">
+      <path d="m9 7 8 5-8 5V7Z" />
+    </template>
+    <template v-else-if="name === 'pause'">
+      <path d="M9 7v10M15 7v10" />
+    </template>
+    <template v-else-if="name === 'stop'">
+      <rect x="7.5" y="7.5" width="9" height="9" rx="1.5" />
+    </template>
+    <template v-else-if="name === 'sparkles'">
+      <path d="M12 3.5c.5 3 2 4.5 5 5-3 .5-4.5 2-5 5-.5-3-2-4.5-5-5 3-.5 4.5-2 5-5Z" />
+      <path d="M18.5 14.5c.3 1.7 1.1 2.5 2.8 2.8-1.7.3-2.5 1.1-2.8 2.8-.3-1.7-1.1-2.5-2.8-2.8 1.7-.3 2.5-1.1 2.8-2.8Z" />
+    </template>
   </svg>
 </template>
 
@@ -87,7 +104,8 @@ defineProps<{
   name: 'menu' | 'plus' | 'close' | 'edit' | 'expand' | 'upload' | 'send'
     | 'chevron-left' | 'chevron-right' | 'image' | 'file' | 'new-chat'
     | 'delete' | 'check' | 'link' | 'refresh' | 'user' | 'logout'
-    | 'sun' | 'moon' | 'monitor'
+    | 'sun' | 'moon' | 'monitor' | 'volume' | 'play' | 'pause' | 'stop'
+    | 'sparkles'
 }>()
 </script>
 

@@ -27,79 +27,73 @@ import type { LearningPlan } from './api'
  *   4. 每收到一个 SSE 事件，分发到对应 handler 更新 UI
  *   5. 连接中断时记录错误并结束 streaming
  */
-export function sendMessage(
+export async function sendMessage(
   message: string,
   imageData?: string,
   userId?: number,
   metadata?: { displayMessage?: string; attachmentName?: string; attachmentType?: 'image' | 'file' }
-) {
+): Promise<void> {
   const chatStore = useChatStore()
   const profileStore = useProfileStore()
 
   // 标记流式接收开始（UI 显示 loading 动画）
   chatStore.startStreaming()
 
-  fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      // 如果已有会话 ID 则复用（同一轮对话），否则后端会自动生成新的
-      conversationId: chatStore.conversationId || undefined,
-      // 图片 Base64 数据（可选）
-      imageData: imageData || undefined,
-      // 用户 ID，用于画像按用户隔离
-      userId: userId || undefined,
-      displayMessage: metadata?.displayMessage || message,
-      attachmentName: metadata?.attachmentName,
-      attachmentType: metadata?.attachmentType,
-    }),
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      // 获取 ReadableStream 读取器，逐块读取 SSE 数据
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new Error('响应体不可读')
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ''  // 缓冲区：处理跨 chunk 的不完整行
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break  // 流结束
-
-        // 将 Uint8Array 解码为文本并追加到缓冲区
-        buffer += decoder.decode(value, { stream: true })
-
-        // 按行分割，最后一行可能不完整，保留在缓冲区
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          // SSE 格式：data:{...json...} 或 data: {...json...}
-          if (line.startsWith('data:')) {
-            try {
-              const json = line.slice(5).trim()
-              if (!json) continue
-              const data = JSON.parse(json)
-              handleSSEEvent(data, chatStore, profileStore)
-            } catch {
-              // 跳过解析失败的 JSON（可能是不完整行）
-            }
-          }
-        }
-      }
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        conversationId: chatStore.conversationId || undefined,
+        imageData: imageData || undefined,
+        userId: userId || undefined,
+        displayMessage: metadata?.displayMessage || message,
+        attachmentName: metadata?.attachmentName,
+        attachmentType: metadata?.attachmentType,
+      }),
     })
-    .catch((err) => {
-      console.error('SSE 连接错误:', err)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('响应体不可读')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let completed = false
+    const processLine = (line: string) => {
+      if (!line.startsWith('data:')) return
+      const json = line.slice(5).trim()
+      if (!json) return
+      try {
+        completed = handleSSEEvent(JSON.parse(json), chatStore, profileStore) || completed
+      } catch (error) {
+        console.warn('忽略无法解析的 SSE 数据:', error)
+      }
+    }
+
+    while (!completed) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+      lines.forEach(processLine)
+    }
+
+    if (!completed) {
+      buffer += decoder.decode()
+      if (buffer.trim()) processLine(buffer)
+    }
+    if (!completed) throw new Error('连接提前结束')
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error))
+    console.error('SSE 连接错误:', err)
+    if (chatStore.isStreaming) {
       chatStore.appendStreamContent(`\n\n[错误: 连接失败 - ${err.message}]`)
       chatStore.finishStreaming()
-    })
+    }
+  }
 }
 
 /**
@@ -115,17 +109,17 @@ function handleSSEEvent(
   data: { type: string; content: string },
   chatStore: ReturnType<typeof useChatStore>,
   profileStore: ReturnType<typeof useProfileStore>
-) {
+): boolean {
   switch (data.type) {
     case 'conversation_id':
       // 首次对话时，后端返回生成的会话 ID
       chatStore.setConversationId(data.content)
-      break
+      return false
 
     case 'content':
       // 逐字符追加文本 → UI 实时渲染打字机效果
       chatStore.appendStreamContent(data.content)
-      break
+      return false
 
     case 'profile_update':
       // 画像更新：解析 JSON 并刷新 Pinia Store → 雷达图响应式更新
@@ -137,7 +131,7 @@ function handleSSEEvent(
       } catch {
         console.warn('画像更新数据解析失败')
       }
-      break
+      return false
 
     case 'plan_update':
       // 对话触发的计划修订：通知计划卡片立即换成新版本。
@@ -149,19 +143,20 @@ function handleSSEEvent(
       } catch {
         console.warn('学习计划更新数据解析失败')
       }
-      break
+      return false
 
     case 'done':
       // 流式输出完成：将缓存的文本正式添加到消息列表
       chatStore.finishStreaming()
       window.dispatchEvent(new Event('learning-activity-updated'))
       window.dispatchEvent(new Event('conversation-list-updated'))
-      break
+      return true
 
     case 'error':
       // 后端返回的错误信息
       chatStore.appendStreamContent(`\n\n[错误: ${data.content}]`)
       chatStore.finishStreaming()
-      break
+      return true
   }
+  return false
 }

@@ -98,16 +98,22 @@ export interface SubmissionDetail {
  * @param options 可选的 fetch 配置（method、body 等）
  */
 async function request<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
-  const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  const headers = new Headers(options?.headers)
+  if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
   }
-  const payload = await res.json() as ApiResponse<T>
-  if (payload.code >= 400) {
-    throw new Error(payload.message || '请求失败')
+  const res = await fetch(`${BASE_URL}${url}`, {
+    ...options,
+    headers,
+  })
+  let payload: ApiResponse<T> | null = null
+  try {
+    payload = await res.json() as ApiResponse<T>
+  } catch {
+    // 非 JSON 响应会在下方按 HTTP 状态转换成统一错误。
+  }
+  if (!res.ok || !payload || payload.code >= 400) {
+    throw new Error(payload?.message || `HTTP ${res.status}: ${res.statusText || '请求失败'}`)
   }
   return payload
 }
@@ -159,7 +165,6 @@ export async function savePlanApi(
     method: 'PUT',
     body: JSON.stringify({ userId, conversationId, plan }),
   })
-  if (res.code !== 200) throw new Error(res.message)
   return res.data
 }
 
@@ -177,7 +182,6 @@ export async function loginApi(username: string, password: string): Promise<Auth
     method: 'POST',
     body: JSON.stringify({ username, password }),
   })
-  if (res.code !== 200) throw new Error(res.message)
   return res.data
 }
 
@@ -186,7 +190,6 @@ export async function registerApi(username: string, password: string): Promise<A
     method: 'POST',
     body: JSON.stringify({ username, password }),
   })
-  if (res.code !== 200) throw new Error(res.message)
   return res.data
 }
 
@@ -204,29 +207,32 @@ export async function parseFileApi(
   if (context?.conversationId) formData.append('conversationId', context.conversationId)
   if (context?.purpose) formData.append('purpose', context.purpose)
 
-  const res = await fetch(`${BASE_URL}/parse-file`, {
+  const res = await request<{ text: string; filename: string; length: number }>('/parse-file', {
     method: 'POST',
     body: formData,
   })
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-  }
-  const result = await res.json()
-  if (result.code !== 200) {
-    throw new Error(result.message)
-  }
-  return result.data
+  return res.data
 }
 
-/** POST /api/voice/welcome —— 生成当前欢迎文字的克隆 WAV 音频。 */
-export async function fetchWelcomeVoice(username: string, text: string): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/voice/welcome`, {
+/** 使用当前登录用户的克隆音色生成 WAV；signal 用于切换消息时取消过期请求。 */
+export async function fetchVoiceAudio(
+  userId: number,
+  username: string,
+  text: string,
+  style = '',
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/voice/synthesize`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, text }),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': String(userId),
+    },
+    body: JSON.stringify({ username, text, style }),
+    signal,
   })
   if (!res.ok) {
-    throw new Error(`欢迎语音生成失败：HTTP ${res.status}`)
+    throw new Error(`语音生成失败：HTTP ${res.status}`)
   }
   return res.blob()
 }
@@ -253,7 +259,6 @@ export async function updateProfileApi(
       avatar: avatar || '',
     }),
   })
-  if (res.code !== 200) throw new Error(res.message)
   return res.data
 }
 
@@ -300,7 +305,7 @@ export async function submitLearningResultApi(
 ): Promise<number> {
   const res = await request<{ submissionId: number }>('/submissions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+    headers: { 'X-User-Id': String(userId) },
     body: JSON.stringify({
       conversationId,
       fileName: file.name,
@@ -313,7 +318,7 @@ export async function submitLearningResultApi(
 
 export async function fetchSubmissionApi(userId: number, submissionId: number): Promise<SubmissionDetail> {
   const res = await request<SubmissionDetail>(`/submissions/${submissionId}`, {
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+    headers: { 'X-User-Id': String(userId) },
   })
   return res.data
 }
@@ -324,7 +329,7 @@ export async function fetchConversationSubmissionsApi(
 ): Promise<SubmissionDetail[]> {
   const res = await request<SubmissionDetail[]>(
     `/conversations/${encodeURIComponent(conversationId)}/submissions`,
-    { headers: { 'Content-Type': 'application/json', 'X-User-Id': String(userId) } }
+    { headers: { 'X-User-Id': String(userId) } }
   )
   return res.data || []
 }
@@ -341,5 +346,4 @@ export async function deleteAccountApi(userId: number, password: string): Promis
       password,
     }),
   })
-  if (res.code !== 200) throw new Error(res.message)
 }

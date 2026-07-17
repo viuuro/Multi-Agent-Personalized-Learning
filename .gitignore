@@ -13,6 +13,7 @@ python-ai/venv/
 python-ai/*.egg-info/
 python-ai/dist/
 python-ai/build/
+python-ai/.cache/
 python-ai/samples/*.mp3
 python-ai/samples/*.wav
 .mypy_cache/

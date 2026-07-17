@@ -109,6 +109,14 @@ export MIMO_API_KEY=sk-your-key-here
 # 可选：语音克隆参考音频；相对路径以 python-ai 目录为基准
 export MIMO_VOICE_REFERENCE_AUDIO=samples/your-reference.mp3
 
+# 可选：克隆语音磁盘缓存（默认 6 小时、最多 64 个 WAV）
+export MIMO_VOICE_CACHE_TTL_SECONDS=21600
+export MIMO_VOICE_CACHE_MAX_FILES=64
+
+# 可选：单用户语音接口限流
+export VOICE_RATE_LIMIT_PER_MINUTE=20
+export VOICE_MAX_CONCURRENT_PER_USER=2
+
 # 不配置时默认使用 backend/data 下的持久化 H2 文件库。
 # 切换 MySQL 时设置：
 export DB_URL='jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true'
@@ -130,6 +138,11 @@ python -m uvicorn main:app --port 8000
 
 语音克隆使用 MiMo 非流式接口。参考音频仅支持 WAV/MP3，Base64 编码后不得超过
 10 MiB；请只使用已获得声音所有者授权的音频。
+
+右键点击 Live2D 模型可打开语音设置。语音总开关关闭时会停止当前播放并关闭
+自动朗读；切换自动朗读会同步切换语音总开关。AI 消息气泡支持按需朗读、暂停、
+继续和停止。生成结果按“参考音频版本 + 文本 + 风格”缓存在
+`python-ai/.cache/voice`，切换对话或朗读内容时会取消前端的过期请求。
 
 也可单独运行语音克隆命令：
 

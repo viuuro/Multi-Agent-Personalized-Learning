@@ -65,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/authStore'
 import { updateProfileApi } from '../services/api'
 import UiIcon from './UiIcon.vue'
@@ -86,6 +86,7 @@ const errorMsg = ref('')
 const successMsg = ref('')
 const saving = ref(false)
 const fileInputRef = ref<HTMLInputElement>()
+let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 function triggerFileInput() {
   fileInputRef.value?.click()
@@ -95,6 +96,7 @@ function handleFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+  input.value = ''
 
   if (file.size > 2 * 1024 * 1024) {
     errorMsg.value = '图片大小不能超过 2MB'
@@ -136,7 +138,7 @@ async function handleSave() {
       avatar: updated.avatar,
     })
     successMsg.value = '保存成功'
-    setTimeout(() => { visible.value = false; emit('close') }, 800)
+    closeTimer = setTimeout(() => { visible.value = false; emit('close') }, 800)
   } catch (e: any) {
     errorMsg.value = e.message || '保存失败'
   } finally {
@@ -145,9 +147,14 @@ async function handleSave() {
 }
 
 function handleClose() {
+  if (closeTimer) clearTimeout(closeTimer)
   visible.value = false
   emit('close')
 }
+
+onUnmounted(() => {
+  if (closeTimer) clearTimeout(closeTimer)
+})
 </script>
 
 <style scoped>

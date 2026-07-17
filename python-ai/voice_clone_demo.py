@@ -14,6 +14,7 @@ import argparse
 import base64
 import binascii
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +89,25 @@ def build_reference_audio_data_url(reference_audio_path: Path) -> str:
         extensions = "、".join(SUPPORTED_AUDIO_TYPES)
         raise VoiceCloneError(f"参考音频只支持 {extensions} 格式：{reference_audio_path.name}")
 
-    audio_bytes = reference_audio_path.read_bytes()
+    stat = reference_audio_path.stat()
+    return _build_reference_audio_data_url_cached(
+        str(reference_audio_path.resolve()),
+        mime_type,
+        stat.st_mtime_ns,
+        stat.st_size,
+    )
+
+
+@lru_cache(maxsize=8)
+def _build_reference_audio_data_url_cached(
+    resolved_path: str,
+    mime_type: str,
+    modified_at_ns: int,
+    file_size: int,
+) -> str:
+    """Encode each unchanged reference file once per worker process."""
+    del modified_at_ns, file_size  # Included in the cache key to invalidate changed files.
+    audio_bytes = Path(resolved_path).read_bytes()
     if not audio_bytes:
         raise VoiceCloneError("参考音频不能为空。")
 
@@ -99,6 +118,17 @@ def build_reference_audio_data_url(reference_audio_path: Path) -> str:
         )
 
     return f"data:{mime_type};base64,{encoded_audio.decode('ascii')}"
+
+
+@lru_cache(maxsize=2)
+def _get_voice_client(api_key: str) -> OpenAI:
+    """Reuse the MiMo HTTP connection pool instead of creating it per request."""
+    return OpenAI(
+        api_key=api_key,
+        base_url=MIMO_BASE_URL,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
 
 
 def extract_audio_bytes(completion: Any) -> bytes:
@@ -154,12 +184,7 @@ def voice_clone_audio(
     voice_data_url = build_reference_audio_data_url(reference_path)
 
     # MiMo 官方 OpenAI 兼容非流式协议：目标文案必须位于 assistant 消息。
-    client = OpenAI(
-        api_key=api_key,
-        base_url=MIMO_BASE_URL,
-        timeout=REQUEST_TIMEOUT_SECONDS,
-        max_retries=0,
-    )
+    client = _get_voice_client(api_key)
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,

@@ -119,6 +119,12 @@
             :role="msg.role"
             :content="msg.content"
             :image-url="msg.imageUrl"
+            :voice-enabled="voiceStore.voiceEnabled"
+            :speech-state="speechStateFor(msg.id)"
+            @speak="speakMessage(msg)"
+            @pause="pauseSpeech"
+            @resume="resumeSpeech"
+            @stop="stopSpeech"
           />
 
           <MessageBubble
@@ -243,15 +249,18 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useChatStore } from '../stores/chatStore'
+import type { Message } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
+import { useVoiceStore } from '../stores/voiceStore'
 import { sendMessage } from '../services/sse'
 import {
   fetchProfile,
   parseFileApi,
   fetchSavedPlanApi,
-  fetchWelcomeVoice,
+  fetchVoiceAudio,
   generateConversationTitleApi,
   submitLearningResultApi,
   fetchSubmissionApi,
@@ -267,6 +276,7 @@ import MessageBubble from '../components/MessageBubble.vue'
 const chatStore = useChatStore()
 const profileStore = useProfileStore()
 const authStore = useAuthStore()
+const voiceStore = useVoiceStore()
 
 /** 记录上次加载画像的用户 ID，用于检测账号切换 */
 let lastLoadedUserId: number | null = null
@@ -299,6 +309,12 @@ const stagedFile = ref<{ file: File; name: string; size: string } | null>(null)
 // ===== 文件提交 & AI 评分 =====
 const submitting = ref(false)
 const evaluationResult = ref<{ score: number; analysis: string; suggestion: string } | null>(null)
+let submissionRunId = 0
+
+function cancelSubmissionPolling() {
+  submissionRunId++
+  submitting.value = false
+}
 
 function applySubmissionResult(detail?: SubmissionDetail) {
   if (!detail) {
@@ -416,8 +432,8 @@ async function handleSend() {
 
   // 图片或纯文本发送
   const msgContent = text || '请分析这张图片'
-  const imageUrl = stagedImage.value?.previewUrl
   const imageData = stagedImage.value?.base64
+  const imageUrl = imageData
   const imageName = stagedImage.value?.name
 
   chatStore.addMessage({
@@ -429,7 +445,7 @@ async function handleSend() {
   })
 
   inputText.value = ''
-  stagedImage.value = null
+  clearStagedImage()
   scrollToBottom()
   sendMessage(msgContent, imageData, authStore.user?.id, {
     displayMessage: msgContent,
@@ -459,8 +475,10 @@ function handleFileUpload() {
 }
 
 function onImageSelected(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 5 * 1024 * 1024) { alert('图片大小不能超过 5MB'); return }
   clearStagedImage()
   const reader = new FileReader()
@@ -469,7 +487,6 @@ function onImageSelected(e: Event) {
     stagedImage.value = { previewUrl: URL.createObjectURL(file), base64: base64Data, name: file.name }
   }
   reader.readAsDataURL(file)
-  ;(e.target as HTMLInputElement).value = ''
 }
 
 function clearStagedImage() {
@@ -488,14 +505,15 @@ function onFileSelected(e: Event) {
   }
 
   // 原有的聊天文件上传逻辑
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('仅支持 PDF、Word (.docx)、TXT 文件'); return }
   clearStagedFile()
   stagedFile.value = { file, name: file.name, size: formatFileSize(file.size) }
-  ;(e.target as HTMLInputElement).value = ''
 }
 
 function clearStagedFile() {
@@ -510,10 +528,13 @@ async function handleSubmissionUpload() {
 }
 
 async function handleSubmissionFileSelected(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
 
+  const runId = ++submissionRunId
   submitting.value = true
   evaluationResult.value = null
 
@@ -540,7 +561,9 @@ async function handleSubmissionFileSelected(e: Event) {
     let retries = 35
     while (retries > 0) {
       await new Promise(r => setTimeout(r, 2000))
+      if (runId !== submissionRunId || chatStore.conversationId !== conversationId) return
       const detail = await fetchSubmissionApi(userId, submissionId)
+      if (runId !== submissionRunId || chatStore.conversationId !== conversationId) return
       if (detail.status === 'EVALUATED' && detail.evaluation) {
         applySubmissionResult(detail)
         window.dispatchEvent(new Event('learning-activity-updated'))
@@ -553,12 +576,12 @@ async function handleSubmissionFileSelected(e: Event) {
       retries--
     }
     if (!evaluationResult.value) {
-      evaluationResult.value = { score: 0, analysis: 'AI 评分超时，请稍后重试', suggestion: 'AI Mock 模式返回固定评分，或检查 API Key 配置' }
+      evaluationResult.value = { score: 0, analysis: 'AI 评分超时，请稍后重试', suggestion: '评分任务仍会在后台继续，可稍后重新打开当前对话查看结果。' }
     }
   } catch (err: unknown) {
     evaluationResult.value = { score: 0, analysis: '提交失败: ' + (err instanceof Error ? err.message : '未知错误'), suggestion: '请检查文件格式并重试' }
   } finally {
-    submitting.value = false
+    if (runId === submissionRunId) submitting.value = false
     ;(e.target as HTMLInputElement).value = ''
   }
 }
@@ -583,72 +606,231 @@ watch(
 
 // 登录后流式输出问候语
 function streamGreeting(text: string) {
+  if (greetingTimer) clearInterval(greetingTimer)
   chatStore.startStreaming()
   const chars = [...text]
   let i = 0
-  const interval = setInterval(() => {
+  greetingTimer = setInterval(() => {
     if (i < chars.length) {
       chatStore.appendStreamContent(chars[i])
       i++
     } else {
-      clearInterval(interval)
+      if (greetingTimer) clearInterval(greetingTimer)
+      greetingTimer = null
       chatStore.finishStreaming()
     }
   }, 35)
 }
 
-let welcomeAudio: HTMLAudioElement | null = null
-let welcomeAudioUrl = ''
-let resumeWelcomeVoice: (() => void) | null = null
+let greetingTimer: ReturnType<typeof setInterval> | null = null
 
-function clearWelcomeVoice() {
-  if (resumeWelcomeVoice) {
-    document.removeEventListener('pointerdown', resumeWelcomeVoice)
-    resumeWelcomeVoice = null
+type SpeechState = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
+
+const activeSpeechId = ref('')
+const activeSpeechState = ref<SpeechState>('idle')
+let speechAbortController: AbortController | null = null
+let speechAudio: HTMLAudioElement | null = null
+let speechAudioUrl = ''
+let speechRunId = 0
+let settleCurrentAudio: ((completed: boolean) => void) | null = null
+let resumeAfterInteraction: (() => void) | null = null
+let suppressNextAutoRead = false
+
+function speechStateFor(messageId: string): SpeechState {
+  return activeSpeechId.value === messageId ? activeSpeechState.value : 'idle'
+}
+
+function normalizeSpeechText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, '。代码块已省略。')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+[.)]\s+/gm, '')
+    .replace(/[>*_~|]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function splitSpeechText(text: string, maxLength = 1200): string[] {
+  if (text.length <= maxLength) return text ? [text] : []
+  const sentences = text.split(/(?<=[。！？!?；;\n])/)
+  const chunks: string[] = []
+  let current = ''
+  for (const sentence of sentences) {
+    if (current && current.length + sentence.length > maxLength) {
+      chunks.push(current.trim())
+      current = ''
+    }
+    if (sentence.length > maxLength) {
+      for (let offset = 0; offset < sentence.length; offset += maxLength) {
+        const part = sentence.slice(offset, offset + maxLength)
+        if (current) {
+          chunks.push(current.trim())
+          current = ''
+        }
+        chunks.push(part.trim())
+      }
+    } else {
+      current += sentence
+    }
   }
-  welcomeAudio?.pause()
-  welcomeAudio = null
-  if (welcomeAudioUrl) {
-    URL.revokeObjectURL(welcomeAudioUrl)
-    welcomeAudioUrl = ''
+  if (current.trim()) chunks.push(current.trim())
+  return chunks.filter(Boolean)
+}
+
+function releaseSpeechAudio() {
+  if (resumeAfterInteraction) {
+    document.removeEventListener('pointerdown', resumeAfterInteraction)
+    resumeAfterInteraction = null
+  }
+  speechAudio?.pause()
+  speechAudio = null
+  if (speechAudioUrl) {
+    URL.revokeObjectURL(speechAudioUrl)
+    speechAudioUrl = ''
   }
 }
 
-async function playWelcomeVoice(greeting: string) {
-  try {
-    const audioBlob = await fetchWelcomeVoice(authStore.user?.username || '', greeting)
-    if (!audioBlob.size) return
+function stopSpeech() {
+  speechRunId++
+  speechAbortController?.abort()
+  speechAbortController = null
+  const settle = settleCurrentAudio
+  settleCurrentAudio = null
+  releaseSpeechAudio()
+  settle?.(false)
+  activeSpeechId.value = ''
+  activeSpeechState.value = 'idle'
+}
 
-    clearWelcomeVoice()
-    welcomeAudioUrl = URL.createObjectURL(audioBlob)
-    const audio = new Audio(welcomeAudioUrl)
-    welcomeAudio = audio
-    audio.addEventListener('ended', () => {
-      if (welcomeAudio === audio) clearWelcomeVoice()
-    }, { once: true })
+function pauseSpeech() {
+  if (!speechAudio || activeSpeechState.value !== 'playing') return
+  speechAudio.pause()
+  activeSpeechState.value = 'paused'
+}
 
-    try {
-      await audio.play()
-    } catch {
-      // 浏览器可能拦截自动播放；用户第一次点击页面后恢复播放。
-      const resume = () => {
-        resumeWelcomeVoice = null
-        void audio.play().catch(() => undefined)
-      }
-      resumeWelcomeVoice = resume
-      document.addEventListener('pointerdown', resume, { once: true })
-    }
-  } catch (err) {
-    console.info('欢迎语音暂不可用，已保留文字欢迎语。', err)
+async function resumeSpeech() {
+  if (!speechAudio || activeSpeechState.value !== 'paused') return
+  if (resumeAfterInteraction) {
+    document.removeEventListener('pointerdown', resumeAfterInteraction)
+    resumeAfterInteraction = null
   }
+  try {
+    await speechAudio.play()
+    activeSpeechState.value = 'playing'
+  } catch {
+    activeSpeechState.value = 'paused'
+  }
+}
+
+function playAudioBlob(blob: Blob, runId: number): Promise<boolean> {
+  return new Promise(resolve => {
+    if (runId !== speechRunId) return resolve(false)
+    releaseSpeechAudio()
+    speechAudioUrl = URL.createObjectURL(blob)
+    const audio = new Audio(speechAudioUrl)
+    speechAudio = audio
+    let settled = false
+    const finish = (completed: boolean) => {
+      if (settled) return
+      settled = true
+      settleCurrentAudio = null
+      releaseSpeechAudio()
+      resolve(completed)
+    }
+    settleCurrentAudio = finish
+    audio.addEventListener('ended', () => finish(true), { once: true })
+    audio.addEventListener('error', () => finish(false), { once: true })
+    activeSpeechState.value = 'playing'
+    void audio.play().catch(() => {
+      activeSpeechState.value = 'paused'
+      const resume = () => {
+        resumeAfterInteraction = null
+        void resumeSpeech()
+      }
+      resumeAfterInteraction = resume
+      document.addEventListener('pointerdown', resume, { once: true })
+    })
+  })
+}
+
+async function speakText(speechId: string, content: string) {
+  const user = authStore.user
+  const text = normalizeSpeechText(content)
+  if (!voiceStore.voiceEnabled || !user || !text) return
+
+  stopSpeech()
+  const runId = speechRunId
+  activeSpeechId.value = speechId
+  activeSpeechState.value = 'loading'
+  speechAbortController = new AbortController()
+
+  try {
+    for (const chunk of splitSpeechText(text)) {
+      if (runId !== speechRunId || !voiceStore.voiceEnabled) return
+      activeSpeechState.value = 'loading'
+      const blob = await fetchVoiceAudio(
+        user.id,
+        user.username,
+        chunk,
+        '',
+        speechAbortController.signal,
+      )
+      if (!blob.size || runId !== speechRunId) return
+      const completed = await playAudioBlob(blob, runId)
+      if (!completed || runId !== speechRunId) return
+    }
+    if (runId === speechRunId) {
+      activeSpeechId.value = ''
+      activeSpeechState.value = 'idle'
+      speechAbortController = null
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return
+    console.info('语音暂不可用，文字内容不受影响。', error)
+    ElMessage.warning(error instanceof Error ? error.message : '语音暂不可用，请稍后重试')
+    if (runId === speechRunId) activeSpeechState.value = 'error'
+  }
+}
+
+function speakMessage(message: Message) {
+  if (message.role !== 'assistant') return
+  void speakText(message.id, message.content)
 }
 
 function startWelcomeGreeting() {
   if (chatStore.messages.length || chatStore.isStreaming) return
   const greeting = getGreeting()
+  suppressNextAutoRead = true
   streamGreeting(greeting)
-  void playWelcomeVoice(greeting)
+  if (voiceStore.autoReadEnabled && voiceStore.voiceEnabled) {
+    void speakText(`welcome-${Date.now()}`, greeting)
+  }
 }
+
+watch(
+  () => chatStore.isStreaming,
+  (streaming, previous) => {
+    if (!previous || streaming) return
+    const latest = chatStore.messages[chatStore.messages.length - 1]
+    if (suppressNextAutoRead) {
+      suppressNextAutoRead = false
+      return
+    }
+    if (latest?.role === 'assistant' && voiceStore.autoReadEnabled && voiceStore.voiceEnabled) {
+      speakMessage(latest)
+    }
+  },
+)
+
+watch(
+  () => voiceStore.voiceEnabled,
+  enabled => { if (!enabled) stopSpeech() },
+)
 
 watch(
   () => authStore.isLoggedIn,
@@ -803,6 +985,7 @@ function handleNewConversation(event: Event) {
   if (chatStore.isStreaming) return
   const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
   if (!conversationId) return
+  cancelSubmissionPolling()
   workspaceLoadVersion++
   chatStore.clearMessages()
   chatStore.setConversationId(conversationId)
@@ -810,12 +993,15 @@ function handleNewConversation(event: Event) {
   planHasData.value = false
   planCardRef.value?.setPlan(null)
   evaluationResult.value = null
-  streamGreeting(getGreeting())
+  stopSpeech()
+  startWelcomeGreeting()
 }
 
 function handleConversationSelected(event: Event) {
   const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
   if (!conversationId) return
+  cancelSubmissionPolling()
+  stopSpeech()
   evaluationResult.value = null
   void loadConversationWorkspace(conversationId)
 }
@@ -842,6 +1028,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  cancelSubmissionPolling()
   messageListRef.value?.removeEventListener('scroll', handleMsgScroll)
   document.removeEventListener('click', closePlusMenu)
   window.removeEventListener('resize', syncSubmissionCenter)
@@ -852,7 +1039,9 @@ onUnmounted(() => {
   if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
   if (scrollTimer) clearTimeout(scrollTimer)
   if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
-  clearWelcomeVoice()
+  if (greetingTimer) clearInterval(greetingTimer)
+  clearStagedImage()
+  stopSpeech()
 })
 
 watch(sidebarOpen, value => {

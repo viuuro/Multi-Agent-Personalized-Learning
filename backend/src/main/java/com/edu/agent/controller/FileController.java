@@ -3,6 +3,7 @@ package com.edu.agent.controller;
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.UploadedFileRecord;
 import com.edu.agent.repository.UploadedFileRecordRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -15,6 +16,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -31,13 +33,16 @@ public class FileController {
     private String pythonAiUrl;
 
     private final UploadedFileRecordRepository uploadedFileRepository;
+    private final ObjectMapper objectMapper;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    public FileController(UploadedFileRecordRepository uploadedFileRepository) {
+    public FileController(UploadedFileRecordRepository uploadedFileRepository,
+                          ObjectMapper objectMapper) {
         this.uploadedFileRepository = uploadedFileRepository;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -68,7 +73,10 @@ public class FileController {
                     "Content-Type: application/octet-stream\r\n\r\n";
             String footer = "\r\n--" + boundary + "--\r\n";
 
-            byte[] body = concat(header.getBytes(), fileBytes, footer.getBytes());
+            byte[] body = concat(
+                    header.getBytes(StandardCharsets.UTF_8),
+                    fileBytes,
+                    footer.getBytes(StandardCharsets.UTF_8));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(pythonAiUrl + "/parse-file"))
@@ -81,8 +89,7 @@ public class FileController {
 
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
-                Map<String, String> result = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(response.body(), Map.class);
+                Map<String, String> result = objectMapper.readValue(response.body(), Map.class);
                 if (userId != null) {
                     UploadedFileRecord record = new UploadedFileRecord();
                     record.setUserId(userId);
@@ -100,8 +107,8 @@ public class FileController {
                 return ApiResponse.error(500, "文件解析服务异常");
             }
         } catch (Exception e) {
-            log.error("文件解析失败: {}", e.getMessage());
-            return ApiResponse.error(500, "文件解析失败: " + e.getMessage());
+            log.error("文件解析失败", e);
+            return ApiResponse.error(500, "文件解析失败，请稍后重试");
         }
     }
 

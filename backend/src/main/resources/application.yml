@@ -41,3 +41,8 @@ python:
 # -----------------------------------------------------------
 ai:
   mock-enabled: ${AI_MOCK_ENABLED:false}
+
+# 音色克隆接口保护：单用户每分钟请求数与同时生成数。
+voice:
+  rate-limit-per-minute: ${VOICE_RATE_LIMIT_PER_MINUTE:20}
+  max-concurrent-per-user: ${VOICE_MAX_CONCURRENT_PER_USER:2}

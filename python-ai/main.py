@@ -17,10 +17,13 @@ Spring Boot 后端通过 HTTP 调用本服务。
 """
 from urllib.parse import quote_plus, urlencode
 from pathlib import Path
+import asyncio
+import hashlib
 import requests as http_requests
 import json
 import os
 import logging
+import time
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -59,6 +62,26 @@ MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 MODEL_NAME = "mimo-v2.5"
 ENABLE_RESPONSE_REVIEW = os.getenv("ENABLE_RESPONSE_REVIEW", "true").lower() == "true"
 
+
+def env_int(name: str, default: int, minimum: int) -> int:
+    """Read an integer setting without making one malformed env var crash startup."""
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        logger.warning("环境变量 %s 不是有效整数，使用默认值 %d", name, default)
+        return default
+
+
+VOICE_CACHE_TTL_SECONDS = env_int("MIMO_VOICE_CACHE_TTL_SECONDS", 21600, 60)
+VOICE_CACHE_MAX_FILES = env_int("MIMO_VOICE_CACHE_MAX_FILES", 64, 1)
+VOICE_CACHE_DIR = Path(os.getenv(
+    "MIMO_VOICE_CACHE_DIR",
+    str(Path(__file__).resolve().parent / ".cache" / "voice"),
+)).expanduser()
+_voice_cache_locks: dict[str, asyncio.Lock] = {}
+_voice_cache_lock_refs: dict[str, int] = {}
+_voice_cache_locks_guard = asyncio.Lock()
+
 # 创建 LangChain ChatOpenAI 实例
 llm = ChatOpenAI(
     model=MODEL_NAME,                           # 模型名称：mimo-v2.5
@@ -74,7 +97,7 @@ llm = ChatOpenAI(
 
 review_llm = ChatOpenAI(
     model=MODEL_NAME,
-    openai_api_key=MIMO_API_KEY,
+    openai_api_key=MIMO_API_KEY or "not-configured",
     openai_api_base=MIMO_BASE_URL,
     temperature=0.2,
     max_tokens=1536,
@@ -1224,6 +1247,87 @@ def resolve_voice_reference_audio() -> Path:
     )
 
 
+def build_voice_cache_key(reference_audio: Path, text: str, style: str) -> str:
+    try:
+        stat = reference_audio.stat()
+    except OSError as exc:
+        raise VoiceCloneError(f"参考音频不存在或无法读取：{reference_audio}") from exc
+    payload = json.dumps({
+        "model": "mimo-v2.5-tts-voiceclone",
+        "reference": str(reference_audio.resolve()),
+        "reference_mtime_ns": stat.st_mtime_ns,
+        "reference_size": stat.st_size,
+        "text": text,
+        "style": style,
+    }, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def read_cached_voice(cache_key: str) -> bytes | None:
+    cache_file = VOICE_CACHE_DIR / f"{cache_key}.wav"
+    try:
+        if not cache_file.is_file():
+            return None
+        if time.time() - cache_file.stat().st_mtime > VOICE_CACHE_TTL_SECONDS:
+            cache_file.unlink(missing_ok=True)
+            return None
+        audio = cache_file.read_bytes()
+        return audio or None
+    except OSError as exc:
+        logger.warning("读取语音缓存失败: %s", exc)
+        return None
+
+
+def write_cached_voice(cache_key: str, audio_bytes: bytes) -> None:
+    try:
+        VOICE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = VOICE_CACHE_DIR / f"{cache_key}.wav"
+        temporary_file = VOICE_CACHE_DIR / f".{cache_key}.{os.getpid()}.tmp"
+        temporary_file.write_bytes(audio_bytes)
+        temporary_file.replace(cache_file)
+
+        cached_files = sorted(
+            VOICE_CACHE_DIR.glob("*.wav"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for stale_file in cached_files[VOICE_CACHE_MAX_FILES:]:
+            stale_file.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("写入语音缓存失败: %s", exc)
+
+
+async def acquire_voice_cache_lock(cache_key: str) -> asyncio.Lock:
+    """Share same-text generation while allowing unused lock entries to be reclaimed."""
+    async with _voice_cache_locks_guard:
+        lock = _voice_cache_locks.setdefault(cache_key, asyncio.Lock())
+        _voice_cache_lock_refs[cache_key] = _voice_cache_lock_refs.get(cache_key, 0) + 1
+    try:
+        await lock.acquire()
+        return lock
+    except BaseException:
+        await release_voice_cache_lock(cache_key, lock, acquired=False)
+        raise
+
+
+async def release_voice_cache_lock(
+    cache_key: str,
+    lock: asyncio.Lock,
+    *,
+    acquired: bool = True,
+) -> None:
+    if acquired:
+        lock.release()
+    async with _voice_cache_locks_guard:
+        remaining = _voice_cache_lock_refs.get(cache_key, 1) - 1
+        if remaining <= 0:
+            _voice_cache_lock_refs.pop(cache_key, None)
+            if not lock.locked():
+                _voice_cache_locks.pop(cache_key, None)
+        else:
+            _voice_cache_lock_refs[cache_key] = remaining
+
+
 @app.post("/voice/welcome")
 async def welcome_voice(req: WelcomeVoiceRequest):
     """Generate one WAV welcome message with MiMo's non-streaming voice clone API."""
@@ -1243,12 +1347,25 @@ async def welcome_voice(req: WelcomeVoiceRequest):
 
     try:
         reference_audio = resolve_voice_reference_audio()
-        audio_bytes = await run_in_threadpool(
-            voice_clone_audio,
-            reference_audio,
-            text,
-            style,
-        )
+        cache_key = build_voice_cache_key(reference_audio, text, style)
+        audio_bytes = await run_in_threadpool(read_cached_voice, cache_key)
+        cache_status = "HIT" if audio_bytes else "MISS"
+        if not audio_bytes:
+            lock = await acquire_voice_cache_lock(cache_key)
+            try:
+                audio_bytes = await run_in_threadpool(read_cached_voice, cache_key)
+                if audio_bytes:
+                    cache_status = "HIT"
+                else:
+                    audio_bytes = await run_in_threadpool(
+                        voice_clone_audio,
+                        reference_audio,
+                        text,
+                        style,
+                    )
+                    await run_in_threadpool(write_cached_voice, cache_key, audio_bytes)
+            finally:
+                await release_voice_cache_lock(cache_key, lock)
     except VoiceCloneError as exc:
         logger.warning("欢迎语音生成失败: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -1262,7 +1379,10 @@ async def welcome_voice(req: WelcomeVoiceRequest):
     return Response(
         content=audio_bytes,
         media_type="audio/wav",
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "X-Voice-Cache": cache_status,
+        },
     )
 
 

@@ -22,6 +22,49 @@
       </div>
       <!-- 消息文本（用户消息直接显示，AI 消息渲染 Markdown） -->
       <div class="message-content" v-html="renderedContent"></div>
+      <div v-if="role === 'assistant' && !isStreaming && content" class="speech-controls">
+        <button
+          v-if="speechState === 'idle' || speechState === 'error'"
+          class="speech-btn"
+          type="button"
+          :disabled="!voiceEnabled"
+          :title="voiceEnabled ? '朗读' : '请先在 Live2D 右键菜单中开启语音'"
+          aria-label="朗读消息"
+          @click="$emit('speak')"
+        ><UiIcon name="volume" /></button>
+        <button
+          v-else-if="speechState === 'loading'"
+          class="speech-btn loading"
+          type="button"
+          title="正在生成语音"
+          aria-label="正在生成语音"
+          disabled
+        ><UiIcon name="volume" /></button>
+        <button
+          v-else-if="speechState === 'playing'"
+          class="speech-btn"
+          type="button"
+          title="暂停"
+          aria-label="暂停朗读"
+          @click="$emit('pause')"
+        ><UiIcon name="pause" /></button>
+        <button
+          v-else
+          class="speech-btn"
+          type="button"
+          title="继续"
+          aria-label="继续朗读"
+          @click="$emit('resume')"
+        ><UiIcon name="play" /></button>
+        <button
+          v-if="speechState === 'playing' || speechState === 'paused' || speechState === 'loading'"
+          class="speech-btn"
+          type="button"
+          title="停止"
+          aria-label="停止朗读"
+          @click="$emit('stop')"
+        ><UiIcon name="stop" /></button>
+      </div>
     </div>
   </div>
 </template>
@@ -30,6 +73,7 @@
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { useAuthStore } from '../stores/authStore'
+import UiIcon from './UiIcon.vue'
 
 const authStore = useAuthStore()
 
@@ -49,11 +93,23 @@ const md = new MarkdownIt({
   breaks: true,   // 将换行符转换为 <br>
 })
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   role: 'user' | 'assistant' | 'system'  // 消息发送者
   content: string                          // 消息文本内容
   isStreaming?: boolean                    // 是否正在流式输出（仅 AI 消息）
   imageUrl?: string                        // 图片 URL（可选）
+  voiceEnabled?: boolean
+  speechState?: 'idle' | 'loading' | 'playing' | 'paused' | 'error'
+}>(), {
+  voiceEnabled: false,
+  speechState: 'idle',
+})
+
+defineEmits<{
+  speak: []
+  pause: []
+  resume: []
+  stop: []
 }>()
 
 /** 预览图片 */
@@ -107,6 +163,49 @@ function escapeHtml(text: string): string {
 
 .message-body {
   position: relative;
+}
+
+.speech-controls {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 3px 0;
+  opacity: 0;
+  transition: opacity .16s ease;
+}
+
+.message-body:hover .speech-controls,
+.speech-controls:focus-within { opacity: 1; }
+
+.speech-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+
+.speech-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--border-solid);
+  background: var(--accent-hover);
+}
+
+.speech-btn:disabled { cursor: default; opacity: .42; }
+.speech-btn .ui-icon { width: 14px; height: 14px; }
+.speech-btn.loading .ui-icon { animation: speech-pulse 1s ease-in-out infinite; }
+
+@keyframes speech-pulse {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
 }
 
 /* 消息内容气泡 */

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -17,13 +18,13 @@ import java.util.Optional;
  * 用户认证服务 —— 处理登录、注册、账号管理
  *
  * 核心职责：
- *   1. 用户登录：验证用户名+密码（SHA-256 哈希比对）
+ *   1. 用户登录：验证用户名+BCrypt 密码摘要
  *   2. 用户注册：创建新用户（密码哈希存储，不明文保存）
  *   3. 账号管理：修改用户名、密码、头像
  *
  * 安全设计：
- *   - 密码使用 SHA-256 哈希后存储，数据库中不保存明文密码
- *   - 登录时将用户输入的密码哈希后与数据库中的哈希值比对
+ *   - 新密码使用带随机盐的 BCrypt 存储，数据库中不保存明文密码
+ *   - 旧 SHA-256 摘要仅用于兼容迁移，成功登录后立即升级为 BCrypt
  *   - 修改密码时需要验证原密码
  *
  * ========== 【Spring Boot】在本类的使用 ==========
@@ -48,6 +49,7 @@ public class AuthService {
     private final UploadedFileRecordRepository uploadedFileRecordRepository;
     private final ProfileEvidenceRepository profileEvidenceRepository;
     private final AgentDecisionRecordRepository agentDecisionRecordRepository;
+    private final PasswordEncoder passwordEncoder;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
     public AuthService(UserRepository userRepository,
@@ -60,7 +62,8 @@ public class AuthService {
                        ConversationSessionRepository conversationSessionRepository,
                        UploadedFileRecordRepository uploadedFileRecordRepository,
                        ProfileEvidenceRepository profileEvidenceRepository,
-                       AgentDecisionRecordRepository agentDecisionRecordRepository) {
+                       AgentDecisionRecordRepository agentDecisionRecordRepository,
+                       PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.userProfileRepository = userProfileRepository;
@@ -72,6 +75,7 @@ public class AuthService {
         this.uploadedFileRecordRepository = uploadedFileRecordRepository;
         this.profileEvidenceRepository = profileEvidenceRepository;
         this.agentDecisionRecordRepository = agentDecisionRecordRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     /**
@@ -87,17 +91,18 @@ public class AuthService {
      * @return 验证通过的 User 对象
      * @throws RuntimeException 用户不存在或密码错误
      */
+    @Transactional
     public User login(String username, String password) {
         // 【Spring Boot/Data JPA】findByUsername() 由 Spring Data JPA 方法命名规则自动生成
         // 自动生成 SQL: SELECT * FROM app_user WHERE username = ?
         Optional<User> userOpt = userRepository.findByUsername(username);
-        if (userOpt.isEmpty()) {
-            throw new RuntimeException("用户不存在");
-        }
+        if (userOpt.isEmpty()) throw new RuntimeException("用户名或密码错误");
         User user = userOpt.get();
-        // 将用户输入的密码哈希后与数据库中存储的哈希值比对
-        if (!user.getPassword().equals(hash(password))) {
-            throw new RuntimeException("密码错误");
+        if (!matchesPassword(password, user.getPassword())) throw new RuntimeException("用户名或密码错误");
+        if (isLegacyHash(user.getPassword())) {
+            user.setPassword(passwordEncoder.encode(password));
+            userRepository.save(user);
+            log.info("用户 {} 的旧密码摘要已自动升级为 BCrypt", username);
         }
         log.info("用户 {} 登录成功", username);
         return user;
@@ -121,8 +126,8 @@ public class AuthService {
         if (username == null || username.trim().isEmpty()) {
             throw new RuntimeException("用户名不能为空");
         }
-        if (password == null || password.length() < 1) {
-            throw new RuntimeException("密码不能为空");
+        if (password == null || password.length() < 8) {
+            throw new RuntimeException("密码至少需要 8 个字符");
         }
         // 【Spring Boot/Data JPA】existsByUsername() 由方法名自动生成
         // 自动生成 SQL: SELECT COUNT(*) > 0 FROM app_user WHERE username = ?
@@ -132,7 +137,7 @@ public class AuthService {
         // 创建用户实体
         User user = new User();
         user.setUsername(username.trim());
-        user.setPassword(hash(password));  // 密码哈希后存储
+        user.setPassword(passwordEncoder.encode(password));
         // 【Spring Boot/Data JPA】save() 由 JpaRepository 自动提供
         // 自动生成 SQL: INSERT INTO app_user (username, password, ...) VALUES (?, ?, ...)
         User saved = userRepository.save(user);
@@ -173,13 +178,22 @@ public class AuthService {
         }
         // 修改密码（需要验证原密码）
         if (newPassword != null && !newPassword.isEmpty()) {
-            if (currentPassword == null || !user.getPassword().equals(hash(currentPassword))) {
+            if (newPassword.length() < 8) {
+                throw new RuntimeException("新密码至少需要 8 个字符");
+            }
+            if (currentPassword == null || !matchesPassword(currentPassword, user.getPassword())) {
                 throw new RuntimeException("原密码错误");
             }
-            user.setPassword(hash(newPassword));
+            user.setPassword(passwordEncoder.encode(newPassword));
         }
         // 修改头像（Base64 编码的图片数据）
         if (avatar != null) {
+            if (avatar.length() > 2 * 1024 * 1024) {
+                throw new RuntimeException("头像不能超过 2MB");
+            }
+            if (!avatar.isBlank() && !avatar.startsWith("data:image/")) {
+                throw new RuntimeException("头像格式无效");
+            }
             user.setAvatar(avatar);
         }
         // 【Spring Boot/Data JPA】save() 既可用于新增也可用于更新
@@ -232,7 +246,7 @@ public class AuthService {
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
 
         // 验证密码，防止误删
-        if (!user.getPassword().equals(hash(password))) {
+        if (!matchesPassword(password, user.getPassword())) {
             throw new RuntimeException("密码错误");
         }
 
@@ -273,5 +287,21 @@ public class AuthService {
         // 删除用户账户
         userRepository.delete(user);
         log.info(">>> 用户账号 {} 已注销", user.getUsername());
+    }
+
+    public User getUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+    }
+
+    private boolean matchesPassword(String rawPassword, String storedHash) {
+        if (rawPassword == null || storedHash == null) return false;
+        return isLegacyHash(storedHash)
+                ? storedHash.equals(hash(rawPassword))
+                : passwordEncoder.matches(rawPassword, storedHash);
+    }
+
+    private static boolean isLegacyHash(String value) {
+        return value != null && value.matches("(?i)^[0-9a-f]{64}$");
     }
 }

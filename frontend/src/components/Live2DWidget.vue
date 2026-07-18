@@ -112,7 +112,7 @@ const containerWidth = 360
 const containerHeight = 410
 const currentScale = ref(baseScale)
 // 脚底锚点下推 + 左移，确保头部和胸部在可视区
-const modelOffsetY = 857
+const modelOffsetY = 865
 const modelOffsetX = -242
 
 const expressions = [
@@ -416,6 +416,13 @@ onUnmounted(() => {
 .voice-menu-pop-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .voice-menu-pop-enter-from,
 .voice-menu-pop-leave-to { opacity: 0; transform: translateY(4px) scale(.98); }
+</style>
+
+<style>
+/* 深色模式降低 Live2D 亮度 */
+[data-theme="dark"] .live2d-stage canvas {
+  filter: brightness(0.85);
+}
 </style>
 
 <style>

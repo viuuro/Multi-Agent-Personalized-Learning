@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { onScopeDispose, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 
 /**
  * 主题状态管理
@@ -23,12 +23,10 @@ export const useThemeStore = defineStore('theme', () => {
   /** 监听系统偏好变化 */
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
   systemDark.value = mq.matches
-  const handleSystemThemeChange = (e: MediaQueryListEvent) => {
+  mq.addEventListener('change', (e) => {
     systemDark.value = e.matches
     applyTheme()
-  }
-  mq.addEventListener('change', handleSystemThemeChange)
-  onScopeDispose(() => mq.removeEventListener('change', handleSystemThemeChange))
+  })
 
   /** 计算并应用主题 */
   function applyTheme() {

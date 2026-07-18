@@ -73,6 +73,16 @@ export interface SubmissionEvaluation {
   suggestion: string
   weaknessesJson?: string
   recommendedActionsJson?: string
+  dimensionsJson?: string
+  strengthsJson?: string
+  masteredPointsJson?: string
+  progressEvidenceJson?: string
+  behaviorLinksJson?: string
+  growthOutcome?: 'BASELINE' | 'PROGRESSED' | 'STABLE' | 'REGRESSED'
+  previousScore?: number
+  scoreDelta?: number
+  nextChallenge?: string
+  blessingText?: string
   evaluationTime: string
 }
 
@@ -83,9 +93,13 @@ export interface SubmissionDetail {
   conversationId?: string
   fileName?: string
   fileSize?: number
+  versionNumber?: number
+  previousSubmissionId?: number
+  comparisonSubmissionId?: number
+  agentName?: string
   content: string
   submissionTime: string
-  status: 'PENDING' | 'EVALUATED' | 'ERROR'
+  status: 'PENDING' | 'RUNNING' | 'EVALUATED' | 'ERROR'
   errorMessage?: string
   evaluation?: SubmissionEvaluation
 }
@@ -98,22 +112,18 @@ export interface SubmissionDetail {
  * @param options 可选的 fetch 配置（method、body 等）
  */
 async function request<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
-  const headers = new Headers(options?.headers)
-  if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json')
-  }
   const res = await fetch(`${BASE_URL}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...options,
-    headers,
   })
-  let payload: ApiResponse<T> | null = null
-  try {
-    payload = await res.json() as ApiResponse<T>
-  } catch {
-    // 非 JSON 响应会在下方按 HTTP 状态转换成统一错误。
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null) as ApiResponse<unknown> | null
+    throw new Error(errorBody?.message || `HTTP ${res.status}: ${res.statusText}`)
   }
-  if (!res.ok || !payload || payload.code >= 400) {
-    throw new Error(payload?.message || `HTTP ${res.status}: ${res.statusText || '请求失败'}`)
+  const payload = await res.json() as ApiResponse<T>
+  if (payload.code >= 400) {
+    throw new Error(payload.message || '请求失败')
   }
   return payload
 }
@@ -165,6 +175,7 @@ export async function savePlanApi(
     method: 'PUT',
     body: JSON.stringify({ userId, conversationId, plan }),
   })
+  if (res.code !== 200) throw new Error(res.message)
   return res.data
 }
 
@@ -193,6 +204,15 @@ export async function registerApi(username: string, password: string): Promise<A
   return res.data
 }
 
+export async function fetchCurrentUserApi(): Promise<AuthUser> {
+  const res = await request<AuthUser>('/auth/me')
+  return res.data
+}
+
+export async function logoutApi(): Promise<void> {
+  await request<void>('/auth/logout', { method: 'POST', body: '{}' })
+}
+
 /**
  * POST /api/parse-file —— 上传文件并提取文本内容
  * 支持格式：PDF (.pdf)、Word (.docx)、纯文本 (.txt)
@@ -209,6 +229,7 @@ export async function parseFileApi(
 
   const res = await request<{ text: string; filename: string; length: number }>('/parse-file', {
     method: 'POST',
+    credentials: 'include',
     body: formData,
   })
   return res.data
@@ -233,6 +254,25 @@ export async function fetchVoiceAudio(
   })
   if (!res.ok) {
     throw new Error(`语音生成失败：HTTP ${res.status}`)
+  }
+  return res.blob()
+}
+
+export async function fetchUploadedFilesApi(userId: number, limit = 50): Promise<UploadedFileRecord[]> {
+  const res = await request<UploadedFileRecord[]>(`/files?userId=${userId}&limit=${limit}`)
+  return res.data || []
+}
+
+/** POST /api/voice/welcome —— 生成当前欢迎文字的克隆 WAV 音频。 */
+export async function fetchWelcomeVoice(username: string, text: string, style = ''): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/voice/welcome`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, text, style }),
+  })
+  if (!res.ok) {
+    throw new Error(`欢迎语音生成失败：HTTP ${res.status}`)
   }
   return res.blob()
 }
@@ -298,38 +338,37 @@ export async function generateConversationTitleApi(
 }
 
 export async function submitLearningResultApi(
-  userId: number,
+  _userId: number,
   conversationId: string,
   file: File,
-  content: string
+  content: string,
+  target: { weekNumber: number; taskIndex: number }
 ): Promise<number> {
   const res = await request<{ submissionId: number }>('/submissions', {
     method: 'POST',
-    headers: { 'X-User-Id': String(userId) },
     body: JSON.stringify({
       conversationId,
       fileName: file.name,
       fileSize: file.size,
       content,
+      weekNumber: target.weekNumber,
+      taskIndex: target.taskIndex,
     }),
   })
   return res.data.submissionId
 }
 
-export async function fetchSubmissionApi(userId: number, submissionId: number): Promise<SubmissionDetail> {
-  const res = await request<SubmissionDetail>(`/submissions/${submissionId}`, {
-    headers: { 'X-User-Id': String(userId) },
-  })
+export async function fetchSubmissionApi(_userId: number, submissionId: number): Promise<SubmissionDetail> {
+  const res = await request<SubmissionDetail>(`/submissions/${submissionId}`)
   return res.data
 }
 
 export async function fetchConversationSubmissionsApi(
-  userId: number,
+  _userId: number,
   conversationId: string
 ): Promise<SubmissionDetail[]> {
   const res = await request<SubmissionDetail[]>(
-    `/conversations/${encodeURIComponent(conversationId)}/submissions`,
-    { headers: { 'X-User-Id': String(userId) } }
+    `/conversations/${encodeURIComponent(conversationId)}/submissions`
   )
   return res.data || []
 }

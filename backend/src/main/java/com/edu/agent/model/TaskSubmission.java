@@ -37,11 +37,13 @@ import java.time.LocalDateTime;
  *     error_message   VARCHAR(1000)                      — AI 评价失败时的错误信息
  */
 @Entity  // 【Spring Boot/JPA】声明为 JPA 实体 → Hibernate 映射到数据库表
-@Table(name = "task_submission")  // 【Spring Boot/JPA】指定映射的 MySQL 表名
+@Table(name = "task_submission", uniqueConstraints = @UniqueConstraint(
+        name = "uk_submission_task_version", columnNames = {"task_id", "version_number"}))
 public class TaskSubmission {
 
     /** 提交状态：待评价（AI 尚未完成评价） */
     public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_RUNNING = "RUNNING";
     /** 提交状态：已评价（AI 已完成评价） */
     public static final String STATUS_EVALUATED = "EVALUATED";
     /** 提交状态：评价失败（AI 调用超时、返回格式错误等） */
@@ -56,7 +58,7 @@ public class TaskSubmission {
     @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    /** 提交者用户 ID（从请求 Header X-User-Id 获取） */
+    /** 提交者用户 ID（由服务器认证 Session 提供） */
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
@@ -69,6 +71,16 @@ public class TaskSubmission {
 
     @Column(name = "file_size")
     private Long fileSize;
+
+    // 保持数据库列可空以兼容升级前的历史提交；新提交始终由服务写入版本号。
+    @Column(name = "version_number")
+    private Integer versionNumber = 1;
+
+    @Column(name = "previous_submission_id")
+    private Long previousSubmissionId;
+
+    @Column(name = "comparison_submission_id")
+    private Long comparisonSubmissionId;
 
     /** 提交的成果内容（文本描述、链接等），AI 将此内容与任务描述对比进行评分 */
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
@@ -85,6 +97,9 @@ public class TaskSubmission {
     /** AI 评价错误信息（当 status=ERROR 时记录失败原因，如 "AI API 调用超时"） */
     @Column(name = "error_message", length = 1000)
     private String errorMessage;
+
+    @Column(name = "processing_started_at")
+    private LocalDateTime processingStartedAt;
 
     /**
      * JPA 生命周期回调 —— 在持久化前自动设置提交时间
@@ -115,6 +130,15 @@ public class TaskSubmission {
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
 
+    public Integer getVersionNumber() { return versionNumber; }
+    public void setVersionNumber(Integer versionNumber) { this.versionNumber = versionNumber; }
+
+    public Long getPreviousSubmissionId() { return previousSubmissionId; }
+    public void setPreviousSubmissionId(Long previousSubmissionId) { this.previousSubmissionId = previousSubmissionId; }
+
+    public Long getComparisonSubmissionId() { return comparisonSubmissionId; }
+    public void setComparisonSubmissionId(Long comparisonSubmissionId) { this.comparisonSubmissionId = comparisonSubmissionId; }
+
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
 
@@ -126,4 +150,7 @@ public class TaskSubmission {
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public LocalDateTime getProcessingStartedAt() { return processingStartedAt; }
+    public void setProcessingStartedAt(LocalDateTime processingStartedAt) { this.processingStartedAt = processingStartedAt; }
 }

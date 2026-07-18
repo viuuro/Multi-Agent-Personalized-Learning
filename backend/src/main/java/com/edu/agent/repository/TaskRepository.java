@@ -3,6 +3,10 @@ package com.edu.agent.repository;
 import com.edu.agent.model.Task;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +56,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      */
     List<Task> findByUserIdAndPlanId(Long userId, Long planId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Task> findByUserIdAndPlanIdAndWeekNumberAndTaskIndex(
+            Long userId, Long planId, Integer weekNumber, Integer taskIndex);
+
     /**
      * 根据 ID 和用户 ID 查询任务（同时校验任务存在和用户所有权）
      *
@@ -62,6 +70,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      * @return Optional<Task>，任务不存在或不属于该用户时返回 empty
      */
     Optional<Task> findByIdAndUserId(Long id, Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Task t where t.id = :id and t.userId = :userId")
+    Optional<Task> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
 
     /**
      * 删除指定用户的所有任务（用于账号注销时的级联清理）

@@ -6,8 +6,7 @@ import java.time.LocalDateTime;
 /**
  * 用户实体 —— 持久化到 MySQL app_user 表
  *
- * 存储用户的基本信息：用户名、密码（SHA-256 哈希）、头像（Base64 编码）。
- * 密码不以明文存储，通过 AuthService.hash() 进行 SHA-256 哈希后保存。
+ * 存储用户的基本信息：用户名、BCrypt 密码摘要、头像（Base64 编码）。
  *
  * ========== 【Spring Boot】在本类的使用 ==========
  *   - @Entity + @Table: JPA 实体注解，Spring Boot 自动扫描并映射到 MySQL 表
@@ -28,7 +27,7 @@ public class User {
     @Column(unique = true, nullable = false, length = 50)
     private String username;
 
-    /** 密码（SHA-256 哈希后的 64 位十六进制字符串），不允许为空 */
+    /** BCrypt 密码摘要；旧 SHA-256 摘要会在成功登录后自动迁移。 */
     @Column(nullable = false, length = 128)
     private String password;
 

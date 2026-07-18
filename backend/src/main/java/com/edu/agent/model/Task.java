@@ -30,7 +30,10 @@ import java.time.LocalDateTime;
  *     updated_at  DATETIME                           — 更新时间
  */
 @Entity  // 【Spring Boot/JPA】声明为 JPA 实体 → Hibernate 映射到数据库表
-@Table(name = "learning_task")  // 【Spring Boot/JPA】指定映射的 MySQL 表名
+@Table(name = "learning_task", uniqueConstraints = @UniqueConstraint(
+        name = "uk_learning_task_plan_position",
+        columnNames = {"plan_id", "week_number", "task_index"}
+))
 public class Task {
 
     /** 主键，自增 ID */
@@ -45,6 +48,15 @@ public class Task {
     /** 所属计划 ID（关联 LearningPlanEntity，不设 FK 约束） */
     @Column(name = "plan_id", nullable = false)
     private Long planId;
+
+    @Column(name = "conversation_id", length = 64)
+    private String conversationId;
+
+    @Column(name = "week_number")
+    private Integer weekNumber;
+
+    @Column(name = "task_index")
+    private Integer taskIndex;
 
     /** 任务描述（如 "完成 Python 基础语法学习"），AI 评分时会参考此描述判断完成度 */
     @Column(name = "description", nullable = false, length = 1000)
@@ -91,6 +103,15 @@ public class Task {
 
     public Long getPlanId() { return planId; }
     public void setPlanId(Long planId) { this.planId = planId; }
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public Integer getWeekNumber() { return weekNumber; }
+    public void setWeekNumber(Integer weekNumber) { this.weekNumber = weekNumber; }
+
+    public Integer getTaskIndex() { return taskIndex; }
+    public void setTaskIndex(Integer taskIndex) { this.taskIndex = taskIndex; }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

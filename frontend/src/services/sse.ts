@@ -27,31 +27,73 @@ import type { LearningPlan } from './api'
  *   4. 每收到一个 SSE 事件，分发到对应 handler 更新 UI
  *   5. 连接中断时记录错误并结束 streaming
  */
-export async function sendMessage(
+export function sendMessage(
   message: string,
   imageData?: string,
-  userId?: number,
+  _userId?: number,
   metadata?: { displayMessage?: string; attachmentName?: string; attachmentType?: 'image' | 'file' }
-): Promise<void> {
+) {
   const chatStore = useChatStore()
   const profileStore = useProfileStore()
 
   // 标记流式接收开始（UI 显示 loading 动画）
   chatStore.startStreaming()
 
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message,
-        conversationId: chatStore.conversationId || undefined,
-        imageData: imageData || undefined,
-        userId: userId || undefined,
-        displayMessage: metadata?.displayMessage || message,
-        attachmentName: metadata?.attachmentName,
-        attachmentType: metadata?.attachmentType,
-      }),
+  fetch('/api/chat', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      // 如果已有会话 ID 则复用（同一轮对话），否则后端会自动生成新的
+      conversationId: chatStore.conversationId || undefined,
+      // 图片 Base64 数据（可选）
+      imageData: imageData || undefined,
+      // 身份由服务器 Session 确认；保留参数只为兼容现有调用签名。
+      displayMessage: metadata?.displayMessage || message,
+      attachmentName: metadata?.attachmentName,
+      attachmentType: metadata?.attachmentType,
+    }),
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      // 获取 ReadableStream 读取器，逐块读取 SSE 数据
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('响应体不可读')
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''  // 缓冲区：处理跨 chunk 的不完整行
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break  // 流结束
+
+        // 将 Uint8Array 解码为文本并追加到缓冲区
+        buffer += decoder.decode(value, { stream: true })
+
+        // 按行分割，最后一行可能不完整，保留在缓冲区
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          // SSE 格式：data:{...json...} 或 data: {...json...}
+          if (line.startsWith('data:')) {
+            try {
+              const json = line.slice(5).trim()
+              if (!json) continue
+              const data = JSON.parse(json)
+              handleSSEEvent(data, chatStore, profileStore)
+            } catch {
+              // 跳过解析失败的 JSON（可能是不完整行）
+            }
+          }
+        }
+      }
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
@@ -145,12 +187,24 @@ function handleSSEEvent(
       }
       return false
 
+    case 'plan_update':
+      // 对话触发的计划修订：通知计划卡片立即换成新版本。
+      try {
+        const plan: LearningPlan = typeof data.content === 'string'
+          ? JSON.parse(data.content)
+          : (data.content as unknown as LearningPlan)
+        window.dispatchEvent(new CustomEvent('learning-plan-updated', { detail: plan }))
+      } catch {
+        console.warn('学习计划更新数据解析失败')
+      }
+      break
+
     case 'done':
       // 流式输出完成：将缓存的文本正式添加到消息列表
       chatStore.finishStreaming()
       window.dispatchEvent(new Event('learning-activity-updated'))
       window.dispatchEvent(new Event('conversation-list-updated'))
-      return true
+      break
 
     case 'error':
       // 后端返回的错误信息

@@ -4,6 +4,9 @@ import com.edu.agent.controller.dto.SubmissionDetail;
 import com.edu.agent.controller.dto.SubmissionRequest;
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.service.SubmissionService;
+import com.edu.agent.service.RequestRateLimiter;
+import com.edu.agent.security.CurrentUser;
+import org.springframework.security.core.Authentication;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -20,25 +23,24 @@ import java.util.Map;
  *   GET    /api/tasks/{taskId}/submissions  查看某个任务的所有提交（按时间倒序）
  *
  * ========== 鉴权说明 ==========
- *   由于项目未接入 Spring Security，当前通过请求头 "X-User-Id" 传递当前用户 ID。
- *   所有接口都会校验用户只能查看/提交属于自己的数据。
- *   生产环境应替换为 JWT Token 或 Session 认证机制。
+ *   项目使用 Spring Security Session 认证，用户 ID 仅从服务端认证会话读取。
+ *   所有接口都会校验用户只能查看/提交属于自己的数据，客户端用户 ID 不参与鉴权。
  *
  * ========== 接口调用示例 ==========
  *
  *   1. 提交成果：
  *      curl -X POST http://localhost:8080/api/submissions \
  *        -H "Content-Type: application/json" \
- *        -H "X-User-Id: 1" \
+ *        -b cookies.txt \
  *        -d '{"taskId": 1, "content": "这是我完成本次任务的成果..."}'
  *      → 返回：{ "code":200, "data":{ "submissionId":1 }, "message":"提交成功，AI 正在评价中" }
  *
  *   2. 查询评价结果：
- *      curl http://localhost:8080/api/submissions/1 -H "X-User-Id: 1"
+ *      curl http://localhost:8080/api/submissions/1 -b cookies.txt
  *      → 返回提交内容 + AI 评分/分析/建议（若 AI 尚未完成，evaluation 为 null）
  *
  *   3. 查询任务所有提交：
- *      curl http://localhost:8080/api/tasks/1/submissions -H "X-User-Id: 1"
+ *      curl http://localhost:8080/api/tasks/1/submissions -b cookies.txt
  *      → 返回该任务的所有提交记录列表（按时间倒序）
  *
  * ========== 异常处理 ==========
@@ -51,7 +53,7 @@ import java.util.Map;
  *   - @PostMapping / @GetMapping: 映射 HTTP 方法和路径
  *   - @RequestBody: 将请求体 JSON 自动反序列化为 Java 对象
  *   - @PathVariable: 从 URL 路径中提取参数
- *   - @RequestHeader: 从 HTTP 请求头中提取参数
+ *   - Authentication: 从 Spring Security 会话中读取认证主体
  *   - 构造器注入: SubmissionService 由 Spring 自动装配
  */
 @RestController  // 【Spring Boot】声明为 REST 控制器，自动处理 JSON 序列化
@@ -62,10 +64,12 @@ public class SubmissionController {
 
     /** 任务提交与 AI 评价业务服务 */
     private final SubmissionService submissionService;
+    private final RequestRateLimiter rateLimiter;
 
     /** 【Spring Boot】构造器注入 */
-    public SubmissionController(SubmissionService submissionService) {
+    public SubmissionController(SubmissionService submissionService, RequestRateLimiter rateLimiter) {
         this.submissionService = submissionService;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -75,7 +79,7 @@ public class SubmissionController {
      * 系统会在后台异步调用 AI 进行评分和分析。
      *
      * ========== 请求格式 ==========
-     *   请求头: X-User-Id: 1          （当前用户 ID）
+     *   请求凭证: 已登录的 Session Cookie
      *   请求体: {
      *     "taskId": 1,                （任务 ID，必填）
      *     "content": "成果内容..."     （提交内容，必填，不能为空）
@@ -92,12 +96,16 @@ public class SubmissionController {
      *   - 或等几秒后刷新页面查看结果
      *
      * @param body   包含 taskId 和 content 的请求体（JSON 自动反序列化）
-     * @param userId 当前用户 ID（从 Header X-User-Id 获取）
+     * @param authentication Spring Security 当前认证会话
      * @return 包含 submissionId 的成功响应，或错误响应
      */
     @PostMapping("/submissions")  // 【Spring Boot】POST 映射
     public ApiResponse<Map<String, Object>> submit(@RequestBody SubmissionRequest body,
-                                                   @RequestHeader("X-User-Id") Long userId) {
+                                                   Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (!rateLimiter.tryAcquire("submission:" + userId, 10, 60)) {
+            return ApiResponse.error(429, "成果提交过于频繁，请稍后再试");
+        }
         // 参数校验
         if (body.getTaskId() == null
                 && (body.getConversationId() == null || body.getConversationId().isBlank())) {
@@ -113,7 +121,7 @@ public class SubmissionController {
         try {
             Long submissionId = body.getConversationId() != null && !body.getConversationId().isBlank()
                     ? submissionService.submit(userId, body.getConversationId(), body.getFileName(),
-                            body.getFileSize(), body.getContent())
+                            body.getFileSize(), body.getWeekNumber(), body.getTaskIndex(), body.getContent())
                     : submissionService.submit(userId, body.getTaskId(), body.getContent());
             return ApiResponse.success("提交成功，AI 正在评价中", Map.of("submissionId", submissionId));
         } catch (IllegalArgumentException e) {
@@ -126,7 +134,8 @@ public class SubmissionController {
     @GetMapping("/conversations/{conversationId}/submissions")
     public ApiResponse<List<SubmissionDetail>> getConversationSubmissions(
             @PathVariable String conversationId,
-            @RequestHeader("X-User-Id") Long userId) {
+            Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
         try {
             return ApiResponse.success(submissionService
                     .getSubmissionsByConversation(userId, conversationId));
@@ -172,7 +181,8 @@ public class SubmissionController {
      */
     @GetMapping("/submissions/{id}")  // 【Spring Boot】GET 映射，{id} 为路径变量
     public ApiResponse<SubmissionDetail> getSubmission(@PathVariable Long id,
-                                                       @RequestHeader("X-User-Id") Long userId) {
+                                                       Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
         log.info(">>> GET /api/submissions/{} —— userId={}", id, userId);
 
         try {
@@ -195,7 +205,8 @@ public class SubmissionController {
      */
     @GetMapping("/tasks/{taskId}/submissions")  // 【Spring Boot】GET 映射
     public ApiResponse<List<SubmissionDetail>> getTaskSubmissions(@PathVariable Long taskId,
-                                                                   @RequestHeader("X-User-Id") Long userId) {
+                                                                   Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
         log.info(">>> GET /api/tasks/{}/submissions —— userId={}", taskId, userId);
 
         try {

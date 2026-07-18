@@ -47,7 +47,7 @@ class ApplicationContextTest {
         planVersionService.saveNewVersion(userId, conversationId, plan, "create", "测试计划");
 
         Long submissionId = submissionService.submit(
-                userId, conversationId, "result.txt", 128L, "线程池实验结果");
+                userId, conversationId, "result.txt", 128L, 1, 0, "线程池实验结果");
         SubmissionDetail detail = null;
         for (int i = 0; i < 40; i++) {
             detail = submissionService.getSubmissionDetail(submissionId, userId);
@@ -62,5 +62,21 @@ class ApplicationContextTest {
                 .getTemporaryStateJson()).contains("lastSubmissionScore");
         assertThat(profileService.getCurrentProfile(userId, conversationId).getWeaknessPoints())
                 .contains("实践验证不足");
+
+        Long secondSubmissionId = submissionService.submit(
+                userId, conversationId, "result-v2.txt", 160L, 1, 0,
+                "线程池实验第二版：补充了并发数量、运行耗时和验证结果");
+        SubmissionDetail secondDetail = null;
+        for (int i = 0; i < 40; i++) {
+            secondDetail = submissionService.getSubmissionDetail(secondSubmissionId, userId);
+            if ("EVALUATED".equals(secondDetail.getStatus())) break;
+            Thread.sleep(50);
+        }
+        assertThat(secondDetail).isNotNull();
+        assertThat(secondDetail.getVersionNumber()).isEqualTo(2);
+        assertThat(secondDetail.getPreviousSubmissionId()).isEqualTo(submissionId);
+        assertThat(secondDetail.getComparisonSubmissionId()).isEqualTo(submissionId);
+        assertThat(secondDetail.getEvaluation().getScoreDelta()).isEqualTo(4);
+        assertThat(secondDetail.getEvaluation().getGrowthOutcome()).isEqualTo("PROGRESSED");
     }
 }

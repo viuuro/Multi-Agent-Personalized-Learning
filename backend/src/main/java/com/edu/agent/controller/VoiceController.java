@@ -1,8 +1,6 @@
 package com.edu.agent.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.edu.agent.model.User;
-import com.edu.agent.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,8 +11,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.edu.agent.security.CurrentUser;
+import com.edu.agent.service.RequestRateLimiter;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,10 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayDeque;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /** Proxies generated welcome audio so the browser only communicates with Spring Boot. */
 @RestController
@@ -36,36 +33,30 @@ public class VoiceController {
     private static final int MAX_USERNAME_LENGTH = 80;
     private static final int MAX_TEXT_LENGTH = 2000;
     private static final int MAX_STYLE_LENGTH = 1000;
-    private static final int RATE_WINDOW_SECONDS = 60;
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
-    private final UserRepository userRepository;
-    private final ConcurrentHashMap<Long, ArrayDeque<Long>> requestWindows = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, AtomicInteger> inFlightRequests = new ConcurrentHashMap<>();
+    private final RequestRateLimiter rateLimiter;
 
     @Value("${python.ai.url:http://localhost:8000}")
     private String pythonAiUrl;
 
-    @Value("${voice.rate-limit-per-minute:20}")
-    private int rateLimitPerMinute;
-
-    @Value("${voice.max-concurrent-per-user:2}")
-    private int maxConcurrentPerUser;
-
-    public VoiceController(ObjectMapper objectMapper, UserRepository userRepository) {
+    public VoiceController(ObjectMapper objectMapper, RequestRateLimiter rateLimiter) {
         this.objectMapper = objectMapper;
-        this.userRepository = userRepository;
+        this.rateLimiter = rateLimiter;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 
     /** POST /api/voice/welcome - create one non-cached voice-cloned welcome message. */
-    @PostMapping(value = {"/welcome", "/synthesize"}, produces = "audio/wav")
-    public ResponseEntity<byte[]> synthesize(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId,
-            @RequestBody(required = false) Map<String, String> body) {
+    @PostMapping(value = "/welcome", produces = "audio/wav")
+    public ResponseEntity<byte[]> welcome(@RequestBody(required = false) Map<String, String> body,
+                                          Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (!rateLimiter.tryAcquire("voice:" + userId, 10, 60)) {
+            return ResponseEntity.status(429).build();
+        }
         String username = body == null ? "" : body.getOrDefault("username", "");
         String text = body == null ? "" : body.getOrDefault("text", "");
         String style = body == null ? "" : body.getOrDefault("style", "");
@@ -77,27 +68,6 @@ public class VoiceController {
                 || text.length() > MAX_TEXT_LENGTH
                 || style.length() > MAX_STYLE_LENGTH) {
             return ResponseEntity.badRequest().build();
-        }
-
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
-        }
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null || !user.getUsername().equals(username)) {
-            return ResponseEntity.status(403).build();
-        }
-        if (!consumeRateLimit(userId)) {
-            return ResponseEntity.status(429)
-                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(RATE_WINDOW_SECONDS))
-                    .build();
-        }
-
-        AtomicInteger inFlight = inFlightRequests.computeIfAbsent(userId, ignored -> new AtomicInteger());
-        if (inFlight.incrementAndGet() > Math.max(1, maxConcurrentPerUser)) {
-            inFlight.decrementAndGet();
-            return ResponseEntity.status(429)
-                    .header(HttpHeaders.RETRY_AFTER, "5")
-                    .build();
         }
 
         try {
@@ -121,41 +91,21 @@ public class VoiceController {
             );
 
             if (response.statusCode() != 200 || response.body().length == 0) {
-                log.warn("Python voice synthesis request failed with HTTP {}", response.statusCode());
+                log.warn("Python welcome voice request failed with HTTP {}", response.statusCode());
                 return ResponseEntity.status(502).build();
             }
 
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("audio/wav"))
                     .cacheControl(CacheControl.noStore())
-                    .header("X-Voice-Cache", response.headers()
-                            .firstValue("X-Voice-Cache").orElse("UNKNOWN"))
                     .body(response.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            log.warn("Voice synthesis request interrupted");
+            log.warn("Welcome voice request interrupted");
             return ResponseEntity.status(503).build();
         } catch (Exception exception) {
-            log.warn("Voice synthesis request failed: {}", exception.getMessage());
+            log.warn("Welcome voice request failed: {}", exception.getMessage());
             return ResponseEntity.status(503).build();
-        } finally {
-            if (inFlight.decrementAndGet() <= 0) {
-                inFlightRequests.remove(userId, inFlight);
-            }
-        }
-    }
-
-    private boolean consumeRateLimit(Long userId) {
-        long now = System.currentTimeMillis();
-        long cutoff = now - RATE_WINDOW_SECONDS * 1000L;
-        ArrayDeque<Long> timestamps = requestWindows.computeIfAbsent(userId, ignored -> new ArrayDeque<>());
-        synchronized (timestamps) {
-            while (!timestamps.isEmpty() && timestamps.peekFirst() < cutoff) {
-                timestamps.removeFirst();
-            }
-            if (timestamps.size() >= Math.max(1, rateLimitPerMinute)) return false;
-            timestamps.addLast(now);
-            return true;
         }
     }
 }

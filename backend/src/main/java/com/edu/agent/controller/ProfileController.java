@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.edu.agent.security.CurrentUser;
 
 /**
  * 画像控制器 —— 提供用户画像查询接口
@@ -52,8 +54,10 @@ public class ProfileController {
      *   }
      */
     @GetMapping("/profile")  // 【Spring Boot】GET 映射，返回值自动序列化为 JSON
-    public ApiResponse<UserProfile> getProfile(@RequestParam Long userId,
+    public ApiResponse<UserProfile> getProfile(@RequestParam(required = false) Long userId,
+                                                Authentication authentication,
                                                 @RequestParam String conversationId) {
+        userId = CurrentUser.id(authentication);
         log.info(">>> GET /api/profile, userId={}, conversationId={}", userId, conversationId);
         UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
         return ApiResponse.success(profile);

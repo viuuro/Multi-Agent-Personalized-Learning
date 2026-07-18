@@ -2,7 +2,11 @@ package com.edu.agent.repository;
 
 import com.edu.agent.model.TaskSubmission;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -63,10 +67,32 @@ public interface TaskSubmissionRepository extends JpaRepository<TaskSubmission, 
      */
     List<TaskSubmission> findByUserIdAndTaskIdOrderBySubmissionTimeDesc(Long userId, Long taskId);
 
+    Optional<TaskSubmission> findFirstByTaskIdOrderByVersionNumberDesc(Long taskId);
+
+    Optional<TaskSubmission> findFirstByTaskIdAndStatusAndVersionNumberLessThanOrderByVersionNumberDesc(
+            Long taskId, String status, Integer versionNumber);
+
     List<TaskSubmission> findByUserIdAndConversationIdOrderBySubmissionTimeDesc(
             Long userId, String conversationId);
 
     List<TaskSubmission> findByStatus(String status);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update TaskSubmission s set s.status = :running, s.processingStartedAt = :started, " +
+            "s.errorMessage = null where s.id = :id and s.status = :pending")
+    int claimForEvaluation(@Param("id") Long id,
+                           @Param("pending") String pending,
+                           @Param("running") String running,
+                           @Param("started") LocalDateTime started);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update TaskSubmission s set s.status = :pending, s.processingStartedAt = null " +
+            "where s.status = :running and (s.processingStartedAt is null or s.processingStartedAt < :cutoff)")
+    int resetStaleRunning(@Param("running") String running,
+                          @Param("pending") String pending,
+                          @Param("cutoff") LocalDateTime cutoff);
 
     /**
      * 根据 ID 和用户 ID 查询提交记录（同时校验存在和用户所有权）

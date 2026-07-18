@@ -16,14 +16,13 @@ server:
       timeout: 8h
 
 # 【Spring Boot】数据源 + JPA 自动配置（spring-boot-starter-data-jpa）
-# 默认使用 H2 文件数据库，数据写入 backend/data，重启不会丢失。
-# 生产环境可通过 DB_URL/DB_USER/DB_PASSWORD/DB_DRIVER 切换到 MySQL。
+# 默认使用项目的 MySQL 数据库；可通过 DB_URL/DB_USER/DB_PASSWORD/DB_DRIVER 覆盖连接参数。
 spring:
   datasource:                                       # 【Spring Boot】DataSource 自动配置
-    url: ${DB_URL:jdbc:h2:file:./data/edu_agent;MODE=MYSQL;AUTO_SERVER=TRUE}
-    username: ${DB_USER:sa}
-    password: ${DB_PASSWORD:local-dev-only-change-me}
-    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
   h2:                                               # 【Spring Boot】H2 Console 配置
     console:
       enabled: false                                # 默认关闭；仅 dev profile 可显式启用
@@ -32,9 +31,8 @@ spring:
     hibernate:
       ddl-auto: update   # 【Spring Boot】ddl-auto=update: Hibernate 自动建表/更新表结构
     show-sql: false      # 【Spring Boot】开发时可设为 true 在日志中查看 SQL
-    # MySQL 示例：
-    # DB_URL=jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    # DB_USER=root  DB_PASSWORD=123456  DB_DRIVER=com.mysql.cj.jdbc.Driver
+    # H2 本地替代示例：DB_URL=jdbc:h2:file:./data/edu_agent;MODE=MYSQL;AUTO_SERVER=TRUE
+    # DB_USER=sa  DB_PASSWORD=  DB_DRIVER=org.h2.Driver
   servlet:
     multipart:
       max-file-size: 10MB
@@ -47,11 +45,21 @@ python:
   ai:
     url: ${PYTHON_AI_URL:http://localhost:8000}
 
+voice:
+  rate-limit-per-minute: ${VOICE_RATE_LIMIT_PER_MINUTE:10}
+  max-concurrent-per-user: ${VOICE_MAX_CONCURRENT_PER_USER:2}
+
 # -----------------------------------------------------------
 # Spring 本地 Mock 开关。所有真实模型调用统一由 Python AI 服务访问 MiMo-v2.5。
 # -----------------------------------------------------------
 ai:
   mock-enabled: ${AI_MOCK_ENABLED:false}
+
+knowledge:
+  seed:
+    software-engineering-enabled: ${KNOWLEDGE_SEED_SOFTWARE_ENGINEERING_ENABLED:true}
+  search:
+    mysql-fulltext-enabled: ${KNOWLEDGE_MYSQL_FULLTEXT_ENABLED:true}
 
 app:
   cors:

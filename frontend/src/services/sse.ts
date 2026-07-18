@@ -3,6 +3,8 @@ import { useProfileStore } from '../stores/profileStore'
 import type { UserProfile } from '../stores/profileStore'
 import type { LearningPlan } from './api'
 
+const STREAM_INACTIVITY_TIMEOUT_MS = 90_000
+
 /**
  * SSE（Server-Sent Events）服务层
  *
@@ -27,73 +29,41 @@ import type { LearningPlan } from './api'
  *   4. 每收到一个 SSE 事件，分发到对应 handler 更新 UI
  *   5. 连接中断时记录错误并结束 streaming
  */
-export function sendMessage(
+export async function sendMessage(
   message: string,
   imageData?: string,
   _userId?: number,
   metadata?: { displayMessage?: string; attachmentName?: string; attachmentType?: 'image' | 'file' }
-) {
+): Promise<void> {
   const chatStore = useChatStore()
   const profileStore = useProfileStore()
 
   // 标记流式接收开始（UI 显示 loading 动画）
   chatStore.startStreaming()
+  const controller = new AbortController()
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined
+  const resetInactivityTimer = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer)
+    inactivityTimer = setTimeout(() => {
+      controller.abort(new Error('AI 服务响应超时，请稍后重试'))
+    }, STREAM_INACTIVITY_TIMEOUT_MS)
+  }
+  resetInactivityTimer()
 
-  fetch('/api/chat', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      // 如果已有会话 ID 则复用（同一轮对话），否则后端会自动生成新的
-      conversationId: chatStore.conversationId || undefined,
-      // 图片 Base64 数据（可选）
-      imageData: imageData || undefined,
-      // 身份由服务器 Session 确认；保留参数只为兼容现有调用签名。
-      displayMessage: metadata?.displayMessage || message,
-      attachmentName: metadata?.attachmentName,
-      attachmentType: metadata?.attachmentType,
-    }),
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      // 获取 ReadableStream 读取器，逐块读取 SSE 数据
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new Error('响应体不可读')
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ''  // 缓冲区：处理跨 chunk 的不完整行
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break  // 流结束
-
-        // 将 Uint8Array 解码为文本并追加到缓冲区
-        buffer += decoder.decode(value, { stream: true })
-
-        // 按行分割，最后一行可能不完整，保留在缓冲区
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          // SSE 格式：data:{...json...} 或 data: {...json...}
-          if (line.startsWith('data:')) {
-            try {
-              const json = line.slice(5).trim()
-              if (!json) continue
-              const data = JSON.parse(json)
-              handleSSEEvent(data, chatStore, profileStore)
-            } catch {
-              // 跳过解析失败的 JSON（可能是不完整行）
-            }
-          }
-        }
-      }
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      credentials: 'include',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        conversationId: chatStore.conversationId || undefined,
+        imageData: imageData || undefined,
+        displayMessage: metadata?.displayMessage || message,
+        attachmentName: metadata?.attachmentName,
+        attachmentType: metadata?.attachmentType,
+      }),
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
@@ -117,6 +87,7 @@ export function sendMessage(
     while (!completed) {
       const { done, value } = await reader.read()
       if (done) break
+      resetInactivityTimer()
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split(/\r?\n/)
       buffer = lines.pop() || ''
@@ -129,12 +100,16 @@ export function sendMessage(
     }
     if (!completed) throw new Error('连接提前结束')
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error))
+    const err = controller.signal.aborted
+      ? new Error('AI 服务响应超时，请稍后重试')
+      : error instanceof Error ? error : new Error(String(error))
     console.error('SSE 连接错误:', err)
     if (chatStore.isStreaming) {
       chatStore.appendStreamContent(`\n\n[错误: 连接失败 - ${err.message}]`)
       chatStore.finishStreaming()
     }
+  } finally {
+    if (inactivityTimer) clearTimeout(inactivityTimer)
   }
 }
 
@@ -187,24 +162,12 @@ function handleSSEEvent(
       }
       return false
 
-    case 'plan_update':
-      // 对话触发的计划修订：通知计划卡片立即换成新版本。
-      try {
-        const plan: LearningPlan = typeof data.content === 'string'
-          ? JSON.parse(data.content)
-          : (data.content as unknown as LearningPlan)
-        window.dispatchEvent(new CustomEvent('learning-plan-updated', { detail: plan }))
-      } catch {
-        console.warn('学习计划更新数据解析失败')
-      }
-      break
-
     case 'done':
       // 流式输出完成：将缓存的文本正式添加到消息列表
       chatStore.finishStreaming()
       window.dispatchEvent(new Event('learning-activity-updated'))
       window.dispatchEvent(new Event('conversation-list-updated'))
-      break
+      return true
 
     case 'error':
       // 后端返回的错误信息

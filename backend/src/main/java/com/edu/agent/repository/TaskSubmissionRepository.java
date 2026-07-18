@@ -110,6 +110,8 @@ public interface TaskSubmissionRepository extends JpaRepository<TaskSubmission, 
      */
     void deleteByUserId(Long userId);
 
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
+
     /** 查询指定时间区间内的学习成果提交。 */
     List<TaskSubmission> findByUserIdAndSubmissionTimeBetween(
             Long userId, LocalDateTime start, LocalDateTime end);

@@ -4,10 +4,12 @@ import com.edu.agent.model.AiEvaluation;
 import com.edu.agent.model.Conversation;
 import com.edu.agent.model.LearningPlan;
 import com.edu.agent.model.ProfileEvidence;
+import com.edu.agent.model.PracticeQuestion;
 import com.edu.agent.model.TaskSubmission;
 import com.edu.agent.model.UploadedFileRecord;
 import com.edu.agent.repository.AiEvaluationRepository;
 import com.edu.agent.repository.ConversationRepository;
+import com.edu.agent.repository.PracticeQuestionRepository;
 import com.edu.agent.repository.TaskSubmissionRepository;
 import com.edu.agent.repository.UploadedFileRecordRepository;
 import com.edu.agent.service.ConversationSessionService;
@@ -35,6 +37,7 @@ class PersistenceRoundTripTest {
 
     @Autowired private EntityManager entityManager;
     @Autowired private ConversationRepository conversationRepository;
+    @Autowired private PracticeQuestionRepository practiceQuestionRepository;
     @Autowired private UploadedFileRecordRepository uploadedFileRecordRepository;
     @Autowired private TaskSubmissionRepository submissionRepository;
     @Autowired private AiEvaluationRepository evaluationRepository;
@@ -157,5 +160,39 @@ class PersistenceRoundTripTest {
                 .containsExactly(2, 1);
         assertThat(planVersionService.getHistory(userId, conversationId).get(0).getParentPlanId())
                 .isNotNull();
+    }
+
+    @Test
+    void practiceQuestionDraftAndResultSurviveDatabaseRoundTrip() {
+        PracticeQuestion question = new PracticeQuestion();
+        question.setUserId(104L);
+        question.setConversationId("practice-104");
+        question.setBatchId("batch-104");
+        question.setWeekNumber(2);
+        question.setTaskIndex(1);
+        question.setWeekTopic("操作系统进程管理");
+        question.setTaskTitle("理解进程调度算法");
+        question.setQuestionType("SINGLE_CHOICE");
+        question.setDifficulty("MEDIUM");
+        question.setQuestionText("哪种算法会按时间片轮转？");
+        question.setOptionsJson("[\"FCFS\",\"RR\",\"SJF\",\"优先级\"]");
+        question.setCorrectAnswer("B");
+        question.setExplanation("RR 使用固定时间片轮转执行进程。");
+        question.setUserAnswer("B");
+        question.setStatus(PracticeQuestion.STATUS_SUBMITTED);
+        question.setCorrect(true);
+        question.setScore(100);
+        Long id = practiceQuestionRepository.saveAndFlush(question).getId();
+
+        entityManager.clear();
+
+        PracticeQuestion restored = practiceQuestionRepository.findById(id).orElseThrow();
+        assertThat(restored.getConversationId()).isEqualTo("practice-104");
+        assertThat(restored.getUserAnswer()).isEqualTo("B");
+        assertThat(restored.getScore()).isEqualTo(100);
+        assertThat(practiceQuestionRepository
+                .findByUserIdAndConversationIdOrderByCreatedAtDescIdAsc(104L, "practice-104"))
+                .singleElement().extracting(PracticeQuestion::getTaskTitle)
+                .isEqualTo("理解进程调度算法");
     }
 }

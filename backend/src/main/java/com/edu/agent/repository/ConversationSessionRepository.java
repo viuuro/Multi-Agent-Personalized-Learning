@@ -12,4 +12,5 @@ public interface ConversationSessionRepository extends JpaRepository<Conversatio
     Optional<ConversationSession> findByUserIdAndConversationId(Long userId, String conversationId);
     List<ConversationSession> findByUserId(Long userId);
     void deleteByUserId(Long userId);
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

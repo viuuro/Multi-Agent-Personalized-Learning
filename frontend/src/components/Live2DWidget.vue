@@ -16,7 +16,7 @@
         <div class="mari-bar"></div>
       </span>
     </div>
-    <div ref="live2dRef" class="live2d-stage"></div>
+    <div ref="live2dRef" class="live2d-stage" :class="{ ready: modelReady }"></div>
 
     <transition name="voice-menu-pop">
       <div
@@ -62,6 +62,7 @@ import { useVoiceStore } from '../stores/voiceStore'
 type Oml2dInstance = Oml2dProperties & Oml2dMethods & Oml2dEvents
 const rootRef = ref<HTMLDivElement>()
 const live2dRef = ref<HTMLDivElement>()
+const modelReady = ref(false)
 const voiceStore = useVoiceStore()
 let oml2d: Oml2dInstance | null = null
 let disposed = false
@@ -76,6 +77,9 @@ function attachContextMenu() {
   const openMenu = (event: MouseEvent) => {
     const container = rootRef.value
     if (!container) return
+    const target = event.target as Node | null
+    // 左侧面板会与 Live2D 的固定矩形区域重叠；只处理真正落在模型组件内的右键事件。
+    if (!target || !container.contains(target)) return
     const rect = container.getBoundingClientRect()
     if (event.clientX < rect.left || event.clientX > rect.right
       || event.clientY < rect.top || event.clientY > rect.bottom) return
@@ -107,12 +111,12 @@ function attachContextMenu() {
 }
 
 // ===== 尺寸 =====
-const baseScale = 0.215
+const baseScale = 0.210
 const containerWidth = 360
 const containerHeight = 410
 const currentScale = ref(baseScale)
 // 脚底锚点下推 + 左移，确保头部和胸部在可视区
-const modelOffsetY = 865
+const modelOffsetY = 820
 const modelOffsetX = -242
 
 const expressions = [
@@ -246,6 +250,7 @@ onMounted(() => {
 
   oml2d = loadOml2d({
     dockedPosition: 'left',
+    primaryColor: '#D4916F',
     models: [
       {
         name: 'iromari',
@@ -256,16 +261,31 @@ onMounted(() => {
     ],
     statusBar: { disable: true },
     menus: { disable: true },
+    tips: {
+      style: { display: 'none', backgroundColor: 'transparent', border: '0', boxShadow: 'none', filter: 'none' },
+      mobileStyle: { display: 'none', backgroundColor: 'transparent', border: '0', boxShadow: 'none', filter: 'none' },
+      idleTips: { wordTheDay: false, message: [] },
+      welcomeTips: {
+        duration: 0,
+        message: { daybreak: '', morning: '', noon: '', afternoon: '', dusk: '', night: '', lateNight: '', weeHours: '' },
+      },
+      copyTips: { message: [] },
+    },
     parentElement: live2dRef.value,
     sayHello: false,
     mobileDisplay: false,
   })
 
   oml2d.onLoad((status: string) => {
+    if (status !== 'success') {
+      modelReady.value = false
+      return
+    }
     if (status === 'success' && oml2d) {
       oml2d.setModelScale(currentScale.value)
       scheduleInitialization(() => {
         oml2d?.setModelPosition({ x: modelOffsetX, y: modelOffsetY })
+        modelReady.value = true
       }, 300)
       // 延迟 1 秒启用眼动追踪，避免加载时眼睛卡在异常位置
       scheduleInitialization(() => {
@@ -332,6 +352,29 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+
+.live2d-stage.ready { opacity: 1; }
+
+.live2d-stage :deep(#oml2d-stage),
+.live2d-stage :deep(#oml2d-canvas),
+.live2d-stage :deep(canvas) {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.live2d-stage :deep(#oml2d-tips),
+.live2d-stage :deep(#oml2d-statusBar),
+.live2d-stage :deep(#oml2d-menus) {
+  display: none !important;
 }
 
 .voice-context-card {
@@ -416,13 +459,6 @@ onUnmounted(() => {
 .voice-menu-pop-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .voice-menu-pop-enter-from,
 .voice-menu-pop-leave-to { opacity: 0; transform: translateY(4px) scale(.98); }
-</style>
-
-<style>
-/* 深色模式降低 Live2D 亮度 */
-[data-theme="dark"] .live2d-stage canvas {
-  filter: brightness(0.85);
-}
 </style>
 
 <style>

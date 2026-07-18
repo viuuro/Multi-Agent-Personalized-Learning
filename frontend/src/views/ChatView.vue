@@ -266,10 +266,12 @@
           <strong>{{ task.title }}</strong>
         </button>
       </div>
-      <template #footer>
-        <el-button @click="showSubmissionTaskDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!selectedSubmissionTask" @click="confirmSubmissionTask">选择成果文件</el-button>
-      </template>
+      <div class="acct-footer submission-task-footer">
+        <el-button size="large" class="cancel-btn" @click="showSubmissionTaskDialog = false">取消</el-button>
+        <button class="submit-btn" :disabled="!selectedSubmissionTask" @click="confirmSubmissionTask">
+          选择成果文件
+        </button>
+      </div>
     </el-dialog>
 
     <!-- ==================== 展开模态框 ==================== -->
@@ -311,6 +313,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useChatStore } from '../stores/chatStore'
 import type { Message } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
@@ -321,6 +324,7 @@ import {
   fetchProfile,
   parseFileApi,
   fetchSavedPlanApi,
+  fetchVoiceAudio,
   fetchWelcomeVoice,
   generateConversationTitleApi,
   submitLearningResultApi,
@@ -369,6 +373,12 @@ const stagedFile = ref<{ file: File; name: string; size: string } | null>(null)
 
 // ===== 文件提交 & AI 评分 =====
 const submitting = ref(false)
+let submissionRunId = 0
+
+function cancelSubmissionPolling() {
+  submissionRunId++
+  submitting.value = false
+}
 interface GrowthResult {
   status: SubmissionDetail['status']
   score: number
@@ -576,6 +586,7 @@ async function handleSend() {
   // 图片或纯文本发送
   const msgContent = text || '请分析这张图片'
   const imageData = stagedImage.value?.base64
+  const imageUrl = imageData
   const imageName = stagedImage.value?.name
 
   chatStore.addMessage({
@@ -587,7 +598,7 @@ async function handleSend() {
   })
 
   inputText.value = ''
-  stagedImage.value = null
+  clearStagedImage()
   scrollToBottom()
   sendMessage(msgContent, imageData, authStore.user?.id, {
     displayMessage: msgContent,
@@ -620,6 +631,7 @@ function onImageSelected(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 5 * 1024 * 1024) { alert('图片大小不能超过 5MB'); return }
   clearStagedImage()
   const reader = new FileReader()
@@ -628,7 +640,6 @@ function onImageSelected(e: Event) {
     stagedImage.value = { previewUrl: URL.createObjectURL(file), base64: base64Data, name: file.name }
   }
   reader.readAsDataURL(file)
-  ;(e.target as HTMLInputElement).value = ''
 }
 
 function clearStagedImage() {
@@ -647,14 +658,15 @@ function onFileSelected(e: Event) {
   }
 
   // 原有的聊天文件上传逻辑
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('仅支持 PDF、Word (.docx)、TXT 文件'); return }
   clearStagedFile()
   stagedFile.value = { file, name: file.name, size: formatFileSize(file.size) }
-  ;(e.target as HTMLInputElement).value = ''
 }
 
 function clearStagedFile() {
@@ -682,10 +694,13 @@ function confirmSubmissionTask() {
 }
 
 async function handleSubmissionFileSelected(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
+  input.value = ''
   if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
 
+  const runId = ++submissionRunId
   submitting.value = true
   evaluationResult.value = null
 
@@ -718,7 +733,9 @@ async function handleSubmissionFileSelected(e: Event) {
     let retries = 70
     while (retries > 0) {
       await new Promise(r => setTimeout(r, 2000))
+      if (runId !== submissionRunId || chatStore.conversationId !== conversationId) return
       const detail = await fetchSubmissionApi(userId, submissionId)
+      if (runId !== submissionRunId || chatStore.conversationId !== conversationId) return
       if (detail.status === 'EVALUATED' && detail.evaluation) {
         applySubmissionResult(detail)
         window.dispatchEvent(new Event('learning-activity-updated'))
@@ -738,8 +755,7 @@ async function handleSubmissionFileSelected(e: Event) {
     evaluationResult.value = transientGrowthResult(
       '提交失败: ' + (err instanceof Error ? err.message : '未知错误'), '请检查文件格式并重试。')
   } finally {
-    submitting.value = false
-    ;(e.target as HTMLInputElement).value = ''
+    if (runId === submissionRunId) submitting.value = false
   }
 }
 
@@ -779,21 +795,181 @@ function streamGreeting(text: string) {
   }, 35)
 }
 
-let welcomeAudio: HTMLAudioElement | null = null
-let welcomeAudioUrl = ''
-let resumeWelcomeVoice: (() => void) | null = null
+let greetingTimer: ReturnType<typeof setInterval> | null = null
 
-function clearWelcomeVoice() {
-  if (resumeWelcomeVoice) {
-    document.removeEventListener('pointerdown', resumeWelcomeVoice)
-    resumeWelcomeVoice = null
+type SpeechState = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
+
+const activeSpeechId = ref('')
+const activeSpeechState = ref<SpeechState>('idle')
+let speechAbortController: AbortController | null = null
+let speechAudio: HTMLAudioElement | null = null
+let speechAudioUrl = ''
+let speechRunId = 0
+let settleCurrentAudio: ((completed: boolean) => void) | null = null
+let resumeAfterInteraction: (() => void) | null = null
+let suppressNextAutoRead = false
+
+function speechStateFor(messageId: string): SpeechState {
+  return activeSpeechId.value === messageId ? activeSpeechState.value : 'idle'
+}
+
+function normalizeSpeechText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, '。代码块已省略。')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+[.)]\s+/gm, '')
+    .replace(/[>*_~|]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function splitSpeechText(text: string, maxLength = 1200): string[] {
+  if (text.length <= maxLength) return text ? [text] : []
+  const sentences = text.split(/(?<=[。！？!?；;\n])/)
+  const chunks: string[] = []
+  let current = ''
+  for (const sentence of sentences) {
+    if (current && current.length + sentence.length > maxLength) {
+      chunks.push(current.trim())
+      current = ''
+    }
+    if (sentence.length > maxLength) {
+      for (let offset = 0; offset < sentence.length; offset += maxLength) {
+        if (current) {
+          chunks.push(current.trim())
+          current = ''
+        }
+        chunks.push(sentence.slice(offset, offset + maxLength).trim())
+      }
+    } else {
+      current += sentence
+    }
   }
-  welcomeAudio?.pause()
-  welcomeAudio = null
-  if (welcomeAudioUrl) {
-    URL.revokeObjectURL(welcomeAudioUrl)
-    welcomeAudioUrl = ''
+  if (current.trim()) chunks.push(current.trim())
+  return chunks.filter(Boolean)
+}
+
+function releaseSpeechAudio() {
+  if (resumeAfterInteraction) {
+    document.removeEventListener('pointerdown', resumeAfterInteraction)
+    resumeAfterInteraction = null
   }
+  speechAudio?.pause()
+  speechAudio = null
+  if (speechAudioUrl) {
+    URL.revokeObjectURL(speechAudioUrl)
+    speechAudioUrl = ''
+  }
+}
+
+function stopSpeech() {
+  speechRunId++
+  speechAbortController?.abort()
+  speechAbortController = null
+  const settle = settleCurrentAudio
+  settleCurrentAudio = null
+  releaseSpeechAudio()
+  settle?.(false)
+  activeSpeechId.value = ''
+  activeSpeechState.value = 'idle'
+}
+
+function pauseSpeech() {
+  if (!speechAudio || activeSpeechState.value !== 'playing') return
+  speechAudio.pause()
+  activeSpeechState.value = 'paused'
+}
+
+async function resumeSpeech() {
+  if (!speechAudio || activeSpeechState.value !== 'paused') return
+  if (resumeAfterInteraction) {
+    document.removeEventListener('pointerdown', resumeAfterInteraction)
+    resumeAfterInteraction = null
+  }
+  try {
+    await speechAudio.play()
+    activeSpeechState.value = 'playing'
+  } catch {
+    activeSpeechState.value = 'paused'
+  }
+}
+
+function playAudioBlob(blob: Blob, runId: number): Promise<boolean> {
+  return new Promise(resolve => {
+    if (runId !== speechRunId) return resolve(false)
+    releaseSpeechAudio()
+    speechAudioUrl = URL.createObjectURL(blob)
+    const audio = new Audio(speechAudioUrl)
+    speechAudio = audio
+    let settled = false
+    const finish = (completed: boolean) => {
+      if (settled) return
+      settled = true
+      settleCurrentAudio = null
+      releaseSpeechAudio()
+      resolve(completed)
+    }
+    settleCurrentAudio = finish
+    audio.addEventListener('ended', () => finish(true), { once: true })
+    audio.addEventListener('error', () => finish(false), { once: true })
+    activeSpeechState.value = 'playing'
+    void audio.play().catch(() => {
+      activeSpeechState.value = 'paused'
+      const resume = () => {
+        resumeAfterInteraction = null
+        void resumeSpeech()
+      }
+      resumeAfterInteraction = resume
+      document.addEventListener('pointerdown', resume, { once: true })
+    })
+  })
+}
+
+async function speakText(speechId: string, content: string) {
+  const user = authStore.user
+  const text = normalizeSpeechText(content)
+  if (!voiceStore.voiceEnabled || !user || !text) return
+
+  stopSpeech()
+  const runId = speechRunId
+  activeSpeechId.value = speechId
+  activeSpeechState.value = 'loading'
+  speechAbortController = new AbortController()
+
+  try {
+    for (const chunk of splitSpeechText(text)) {
+      if (runId !== speechRunId || !voiceStore.voiceEnabled) return
+      activeSpeechState.value = 'loading'
+      const blob = await fetchVoiceAudio(
+        user.id, user.username, chunk, '', speechAbortController.signal)
+      if (!blob.size || runId !== speechRunId) return
+      const completed = await playAudioBlob(blob, runId)
+      if (!completed || runId !== speechRunId) return
+    }
+    if (runId === speechRunId) {
+      activeSpeechId.value = ''
+      activeSpeechState.value = 'idle'
+      speechAbortController = null
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return
+    console.info('语音暂不可用，文字内容不受影响。', error)
+    ElMessage.warning(error instanceof Error ? error.message : '语音暂不可用，请稍后重试')
+    if (runId === speechRunId) {
+      activeSpeechState.value = 'error'
+      speechAbortController = null
+    }
+  }
+}
+
+function speakMessage(message: Message) {
+  if (message.role !== 'assistant') return
+  void speakText(message.id, message.content)
 }
 
 function clearGrowthVoice() {
@@ -829,41 +1005,35 @@ async function playGrowthBlessing() {
   }
 }
 
-async function playWelcomeVoice(greeting: string) {
-  try {
-    const audioBlob = await fetchWelcomeVoice(authStore.user?.username || '', greeting)
-    if (!audioBlob.size) return
-
-    clearWelcomeVoice()
-    welcomeAudioUrl = URL.createObjectURL(audioBlob)
-    const audio = new Audio(welcomeAudioUrl)
-    welcomeAudio = audio
-    audio.addEventListener('ended', () => {
-      if (welcomeAudio === audio) clearWelcomeVoice()
-    }, { once: true })
-
-    try {
-      await audio.play()
-    } catch {
-      // 浏览器可能拦截自动播放；用户第一次点击页面后恢复播放。
-      const resume = () => {
-        resumeWelcomeVoice = null
-        void audio.play().catch(() => undefined)
-      }
-      resumeWelcomeVoice = resume
-      document.addEventListener('pointerdown', resume, { once: true })
-    }
-  } catch (err) {
-    console.info('欢迎语音暂不可用，已保留文字欢迎语。', err)
-  }
-}
-
 function startWelcomeGreeting() {
   if (chatStore.messages.length || chatStore.isStreaming) return
   const greeting = getGreeting()
+  suppressNextAutoRead = true
   streamGreeting(greeting)
-  void playWelcomeVoice(greeting)
+  if (voiceStore.autoReadEnabled && voiceStore.voiceEnabled) {
+    void speakText(`welcome-${Date.now()}`, greeting)
+  }
 }
+
+watch(
+  () => chatStore.isStreaming,
+  (streaming, previous) => {
+    if (!previous || streaming) return
+    const latest = chatStore.messages[chatStore.messages.length - 1]
+    if (suppressNextAutoRead) {
+      suppressNextAutoRead = false
+      return
+    }
+    if (latest?.role === 'assistant' && voiceStore.autoReadEnabled && voiceStore.voiceEnabled) {
+      speakMessage(latest)
+    }
+  },
+)
+
+watch(
+  () => voiceStore.voiceEnabled,
+  enabled => { if (!enabled) stopSpeech() },
+)
 
 watch(
   () => authStore.isLoggedIn,
@@ -898,8 +1068,11 @@ function syncSubmissionCenter() {
     if (!container || !composer) return
 
     const containerRect = container.getBoundingClientRect()
-    const composerRect = composer.getBoundingClientRect()
-    submissionCenterY.value = composerRect.top + composerRect.height / 2 - containerRect.top
+    // 以输入框底部固定高度的发送按钮为锚点。文本域增加行数时只向上扩展，
+    // 不再使用整个胶囊框的动态中心，避免右侧提交按钮跟着上移。
+    const composerAnchor = composer.querySelector<HTMLElement>('.capsule-send') || composer
+    const anchorRect = composerAnchor.getBoundingClientRect()
+    submissionCenterY.value = anchorRect.top + anchorRect.height / 2 - containerRect.top
   })
 }
 
@@ -1019,6 +1192,7 @@ function handleNewConversation(event: Event) {
   if (chatStore.isStreaming) return
   const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
   if (!conversationId) return
+  cancelSubmissionPolling()
   workspaceLoadVersion++
   chatStore.clearMessages()
   chatStore.setConversationId(conversationId)
@@ -1027,12 +1201,15 @@ function handleNewConversation(event: Event) {
   planCardRef.value?.setPlan(null)
   clearGrowthVoice()
   evaluationResult.value = null
-  streamGreeting(getGreeting())
+  stopSpeech()
+  startWelcomeGreeting()
 }
 
 function handleConversationSelected(event: Event) {
   const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
   if (!conversationId) return
+  cancelSubmissionPolling()
+  stopSpeech()
   clearGrowthVoice()
   evaluationResult.value = null
   void loadConversationWorkspace(conversationId)
@@ -1056,7 +1233,6 @@ onMounted(() => {
   window.addEventListener('new-conversation', handleNewConversation)
   window.addEventListener('conversation-selected', handleConversationSelected)
   nextTick(syncSubmissionCenter)
-  startWelcomeGreeting()
 })
 
 onUnmounted(() => {
@@ -1071,7 +1247,9 @@ onUnmounted(() => {
   if (alignmentFrame !== null) cancelAnimationFrame(alignmentFrame)
   if (scrollTimer) clearTimeout(scrollTimer)
   if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
-  clearWelcomeVoice()
+  if (greetingTimer) clearInterval(greetingTimer)
+  clearStagedImage()
+  stopSpeech()
   clearGrowthVoice()
 })
 
@@ -1084,8 +1262,6 @@ watch(sidebarOpen, value => {
 <style scoped>
 .chat-view { display: flex; height: 100%; gap: 0; }
 .left-panel { width: 35%; min-width: 280px; display: flex; flex-direction: column; background: transparent; overflow-y: auto; padding: 12px; }
-.left-panel::-webkit-scrollbar { width: 4px; }
-.left-panel::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 .panel-card { position: relative; background: transparent; padding: 12px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .panel-card::before { content: ''; position: absolute; inset: 0; background: transparent; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 20px; z-index: -1; }
 .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0; flex-shrink: 0; }
@@ -1143,8 +1319,6 @@ watch(sidebarOpen, value => {
 .plan-tab-content { padding-top: 32px; }
 .plan-footer { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 0; flex-shrink: 0; gap: 8px; }
 .plan-footer-actions { display: flex; gap: 4px; }
-.tab-content::-webkit-scrollbar { width: 3px; }
-.tab-content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
 /* 提交按钮 */
 .submit-file-btn {
@@ -1222,16 +1396,13 @@ watch(sidebarOpen, value => {
 .chat-card { position: relative; background: transparent; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-card::before { content: ''; position: absolute; inset: 0; background: transparent; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 20px; z-index: -1; box-shadow: none; }
 .message-list { position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 0px 10px; }
-.message-list::-webkit-scrollbar { width: 5px; }
-.message-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
-.message-list.scrolling::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
 .loading-indicator { display: flex; gap: 4px; padding: 12px 0; }
 .dot { width: 6px; height: 6px; background: var(--text-placeholder); border-radius: 50%; animation: bounce 1.2s infinite; }
 .dot:nth-child(2) { animation-delay: 0.2s; }
 .dot:nth-child(3) { animation-delay: 0.4s; }
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 .input-area { position: relative; z-index: 5; padding: 12px 16px 0; background: transparent; flex-shrink: 0; margin-bottom: 16px; }
-.capsule-bar { display: flex; align-items: flex-end; background: var(--bg-input); backdrop-filter: blur(20px) saturate(1.3); -webkit-backdrop-filter: blur(20px) saturate(1.3); border: 1px solid var(--border-solid); border-radius: 16px; padding: 4px 4px 4px 4px; box-shadow: var(--shadow-card); }
+.capsule-bar { display: flex; align-items: flex-end; background: var(--bg-input); backdrop-filter: blur(20px) saturate(1.3); -webkit-backdrop-filter: blur(20px) saturate(1.3); border: 1px solid var(--border-solid); border-radius: 16px; padding: 4px 4px 4px 4px; box-shadow: none; }
 .plus-btn { flex-shrink: 0; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-right: 8px; }
 .plus-btn .ui-icon { width: 19px; height: 19px; }
 .plus-btn:hover { background: transparent; border: 1px solid var(--border-solid); }
@@ -1257,16 +1428,12 @@ watch(sidebarOpen, value => {
 .plus-menu-drop-enter-active, .plus-menu-drop-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .plus-menu-drop-enter-from, .plus-menu-drop-leave-to { opacity: 0; transform: translateY(6px); }
 .capsule-input { flex: 1; border: none; outline: none; background: transparent; font-size: 14px; color: var(--text-primary); padding: 8px 0; resize: none; overflow-y: auto; max-height: 120px; font-family: inherit; line-height: 1.5; }
-.capsule-input::-webkit-scrollbar { width: 3px; }
-.capsule-input::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 .capsule-input::placeholder { color: var(--text-placeholder); }
 .capsule-send { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; margin-right: 1px; border: none; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; transition: opacity 0.2s; }
 .capsule-send .ui-icon { width: 19px; height: 19px; }
 .capsule-send:disabled { opacity: 0.5; cursor: not-allowed; }
 .capsule-send:not(:disabled):hover { opacity: 0.85; }
 .expand-plan-content { max-height: 65vh; overflow-y: auto; }
-.expand-plan-content::-webkit-scrollbar { width: 4px; }
-.expand-plan-content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 /* Three-column workspace: compact profile / conversation / action sidebar */
 .chat-view {
   display: grid;
@@ -1660,7 +1827,7 @@ watch(sidebarOpen, value => {
 .el-input__inner { color: var(--text-primary) !important; }
 .el-input__inner::placeholder { color: var(--text-placeholder) !important; }
 .el-input__suffix .el-icon { color: var(--text-faint) !important; }
-.el-dialog { background: var(--bg-primary) !important; backdrop-filter: blur(20px) !important; -webkit-backdrop-filter: blur(20px) !important; border-radius: 20px !important; transform: translateX(160px); }
+.el-dialog { background: var(--bg-primary) !important; backdrop-filter: blur(20px) !important; -webkit-backdrop-filter: blur(20px) !important; border-radius: 20px !important; }
 .el-dialog__header, .el-dialog__body { background: transparent !important; }
 .el-dialog__title { color: var(--text-secondary) !important; padding-left: 6px; }
 .el-dialog__headerbtn { color: var(--text-muted) !important; }

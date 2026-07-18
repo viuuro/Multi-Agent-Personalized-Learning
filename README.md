@@ -63,6 +63,7 @@ MiMo 评价请求会同时获得以下上下文：
 |------|----------|------|
 | 任务定位 | Vue 3 `computed` + Element Plus Dialog | 将提交绑定到 `weekNumber + taskIndex` 的具体计划任务 |
 | 文件解析 | FastAPI `UploadFile` + pypdf + python-docx | 提取 PDF、DOCX、TXT 内容并记录上传元数据 |
+| 知识库 | MySQL ngram FULLTEXT + 可移植中文检索 | 文档分块、来源引用、用户/对话隔离与软件工程专业课程种子知识 |
 | 版本管理 | Spring Data JPA + MySQL/H2 | 保存 `versionNumber`、上一版和实际对比版本 ID |
 | 异步评价 | Spring `Executor` + 事务提交后调度 | HTTP 立即返回提交 ID，后台调用 Python `/evaluate` |
 | 智能评价 | LangChain `ChatOpenAI` + MiMo-v2.5 | 生成五维分数、证据、掌握点、联动说明和下一步挑战 |
@@ -297,6 +298,24 @@ data: {"type":"profile_update","content":{"knowledgeBase":7,...}}
 
 event: done                                 ← 流结束
 data: {"type":"done","content":""}
+```
+
+聊天前，后端会自动检索当前用户可访问的知识分块并注入 MiMo。全局软件工程专业课程知识对所有用户可见，聊天上传资料只对当前对话可见，学习成果和 `KNOWLEDGE` 类型资料对当前用户的所有对话可见。知识库命中的回答会使用 `[资料1]`、`[资料2]` 标注依据。
+
+内置种子按课程独立索引，当前覆盖软件工程基础、C、C++、Java、Java EE、Python、数据库、数据结构、离散数学、线性代数、计算机组成原理、操作系统、Linux、概率论与数理统计、计算机网络、编译原理、移动应用开发和游戏软件开发。应用启动时会复用内容未变化的课程索引，并自动替换已更新课程、删除旧版或已移除课程，避免新旧种子重复召回。
+
+### 知识库接口
+
+- `GET /api/knowledge/documents?conversationId=...`：列出当前用户可访问的全局、用户和当前对话知识文档。
+- `GET /api/knowledge/search?q=需求追踪&conversationId=...&limit=6`：检索相关分块及来源。
+- `DELETE /api/knowledge/documents/{id}`：删除当前用户拥有的知识文档；全局种子知识不可删除。
+- `POST /api/parse-file`：原文件解析接口现在会自动分块入库。`CHAT` 为对话级作用域，`SUBMISSION` 和 `KNOWLEDGE` 为用户级作用域。
+
+MySQL 环境启动后会自动创建 `knowledge_chunk(heading, content)` 的 `ngram FULLTEXT` 索引；H2 开发和测试环境自动使用内置中英文词元评分，无需额外服务。可通过以下环境变量控制：
+
+```bash
+KNOWLEDGE_SEED_SOFTWARE_ENGINEERING_ENABLED=true
+KNOWLEDGE_MYSQL_FULLTEXT_ENABLED=true
 ```
 
 ### GET /api/profile

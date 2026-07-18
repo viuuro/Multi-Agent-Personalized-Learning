@@ -23,6 +23,10 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
      */
     void deleteByUserId(Long userId);
 
+    boolean existsByUserIdAndConversationId(Long userId, String conversationId);
+
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
+
     /**
      * 查询指定用户最近的对话记录（按时间倒序，取前 N 条）
      */

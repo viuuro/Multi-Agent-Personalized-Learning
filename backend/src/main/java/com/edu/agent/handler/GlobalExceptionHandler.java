@@ -86,8 +86,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleRuntime(RuntimeException ex) {
         log.error("运行时异常: ", ex);  // 记录错误日志并打印堆栈
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR) // 500
-                .body(ApiResponse.error(500,
-                        ex.getMessage() != null ? ex.getMessage() : "服务器内部错误"));
+                .body(ApiResponse.error(500, "服务器内部错误"));
     }
 
     /**

@@ -12,4 +12,5 @@ public interface ProfileEvidenceRepository extends JpaRepository<ProfileEvidence
     List<ProfileEvidence> findByUserIdAndConversationIdAndDimensionAndStatusOrderByCreatedAtDesc(
             Long userId, String conversationId, String dimension, String status);
     void deleteByUserId(Long userId);
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

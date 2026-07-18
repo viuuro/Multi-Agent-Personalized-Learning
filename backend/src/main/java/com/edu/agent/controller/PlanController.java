@@ -35,16 +35,18 @@ public class PlanController {
     private final LearningPlanRepository planRepository;
     private final LearningPlanVersionService planVersionService;
     private final RequestRateLimiter rateLimiter;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public PlanController(AgentOrchestrationService orchestrationService,
                           LearningPlanRepository planRepository,
                           LearningPlanVersionService planVersionService,
-                          RequestRateLimiter rateLimiter) {
+                          RequestRateLimiter rateLimiter,
+                          ObjectMapper objectMapper) {
         this.orchestrationService = orchestrationService;
         this.planRepository = planRepository;
         this.planVersionService = planVersionService;
         this.rateLimiter = rateLimiter;
+        this.objectMapper = objectMapper;
     }
 
     /** 生成计划并持久化 */
@@ -110,16 +112,14 @@ public class PlanController {
                                               Authentication authentication) {
         Long userId = CurrentUser.id(authentication);
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> planData = (Map<String, Object>) body.get("plan");
+        Object planData = body.get("plan");
 
-        if (planData == null || conversationId.isBlank()) {
+        if (!(planData instanceof Map<?, ?>) || conversationId.isBlank()) {
             return ApiResponse.error(400, "缺少 plan 数据或 conversationId");
         }
 
         try {
-            String planJson = objectMapper.writeValueAsString(planData);
-            LearningPlan plan = objectMapper.readValue(planJson, LearningPlan.class);
+            LearningPlan plan = objectMapper.convertValue(planData, LearningPlan.class);
             planVersionService.saveNewVersion(userId, conversationId, plan,
                     "manual_edit", "用户在计划编辑器中保存修改");
             return ApiResponse.success("计划已保存", plan);

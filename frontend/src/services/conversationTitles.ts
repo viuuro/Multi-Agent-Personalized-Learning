@@ -19,6 +19,13 @@ export function saveConversationTitle(userId: number, conversationId: string, ti
   localStorage.setItem(storageKey(userId), JSON.stringify(titles))
 }
 
+export function deleteConversationTitle(userId: number, conversationId: string) {
+  const titles = readConversationTitles(userId)
+  if (!(conversationId in titles)) return
+  delete titles[conversationId]
+  localStorage.setItem(storageKey(userId), JSON.stringify(titles))
+}
+
 /** 历史会话尚未有 AI 标题时的本地简化标题。 */
 export function fallbackConversationTitle(messages: Message[]): string {
   const userMessages = messages.filter(message => message.role === 'user')

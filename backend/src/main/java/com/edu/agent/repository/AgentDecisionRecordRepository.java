@@ -12,4 +12,5 @@ public interface AgentDecisionRecordRepository extends JpaRepository<AgentDecisi
     List<AgentDecisionRecord> findByUserIdAndConversationIdOrderByCreatedAtDesc(
             Long userId, String conversationId, Pageable pageable);
     void deleteByUserId(Long userId);
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

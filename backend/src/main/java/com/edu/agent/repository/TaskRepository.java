@@ -81,4 +81,6 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      * @param userId 用户 ID
      */
     void deleteByUserId(Long userId);
+
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

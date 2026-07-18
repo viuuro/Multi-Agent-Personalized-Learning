@@ -29,4 +29,6 @@ public interface LearningPlanRepository extends JpaRepository<LearningPlanEntity
      * 删除指定用户的所有学习计划
      */
     void deleteByUserId(Long userId);
+
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

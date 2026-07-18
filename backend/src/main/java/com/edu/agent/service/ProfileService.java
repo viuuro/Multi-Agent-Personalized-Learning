@@ -58,7 +58,7 @@ public class ProfileService {
      * @param userId 用户 ID
      */
     public UserProfile getCurrentProfile(Long userId, String conversationId) {
-        var opt = profileRepository.findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+        var opt = profileRepository.findFirstByUserIdAndConversationIdOrderByUpdatedAtDescIdDesc(
                 userId, conversationId);
         if (opt.isPresent()) {
             UserProfile profile = opt.get();

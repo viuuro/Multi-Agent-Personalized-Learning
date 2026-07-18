@@ -1,5 +1,10 @@
 <template>
-  <div id="app-container">
+  <AuthView
+    v-if="showAuth"
+    @logged-in="onLoggedIn"
+  />
+
+  <div v-else id="app-container">
     <!-- 顶部导航栏：系统名称 + 副标题 + 汉堡菜单 -->
     <header class="app-header">
       <div class="header-left">
@@ -34,8 +39,24 @@
       <ChatView />
     </main>
 
+    <button
+      v-if="authStore.isLoggedIn"
+      class="practice-toggle"
+      :class="{ open: practiceOpen }"
+      type="button"
+      :aria-expanded="practiceOpen"
+      :aria-label="practiceOpen ? '收起练习空间' : '展开练习空间'"
+      @click="practiceOpen = !practiceOpen"
+    >
+      <UiIcon :name="practiceOpen ? 'chevron-down' : 'chevron-up'" />
+    </button>
+
+    <Transition name="practice-sheet">
+      <PracticeWorkspace v-if="practiceOpen" />
+    </Transition>
+
     <!-- 学习数据 / 历史文件 面板 -->
-    <div v-if="authStore.isLoggedIn" class="overlay-panel">
+    <div v-if="authStore.isLoggedIn && !practiceOpen" class="overlay-panel">
       <div class="dashboard-switch-slot">
         <!-- 学习数据：贡献图 -->
         <div v-if="activeHeaderTab === 'data'" class="contribution-graph">
@@ -45,11 +66,14 @@
           </div>
           <div class="graph-grid">
             <div
-              v-for="(day, i) in contributionData"
-              :key="i"
+              v-for="day in contributionData"
+              :key="day.date"
               class="graph-cell"
               :style="{ opacity: day.level === 0 ? 0.15 : 0.3 + day.level * 0.15 }"
-              :title="`${day.date}：${day.conversationCount} 次对话，${day.submissionCount} 次成果提交，活跃度 ${day.score}`"
+              :aria-label="`${day.displayDate}：${day.conversationCount} 次对话，${day.submissionCount} 次成果提交，活跃度 ${day.score}`"
+              @mouseenter="showActivityTooltip($event, day)"
+              @mousemove="moveActivityTooltip"
+              @mouseleave="hideActivityTooltip"
             ></div>
           </div>
           <div class="graph-legend">
@@ -85,7 +109,6 @@
           <button
             class="new-conversation-btn"
             type="button"
-            title="新建对话"
             aria-label="新建对话"
             :disabled="chatStore.isStreaming"
             @click="startNewConversation"
@@ -93,7 +116,12 @@
             <UiIcon name="new-chat" />
           </button>
         </div>
-        <div v-if="conversationSessions.length" class="conversation-list">
+        <div
+          v-if="conversationSessions.length"
+          class="conversation-list"
+          :class="{ scrolling: isConversationListScrolling }"
+          @scroll.passive="handleConversationListScroll"
+        >
           <button
             v-for="session in conversationSessions"
             :key="session.id"
@@ -102,6 +130,7 @@
             type="button"
             :disabled="chatStore.isStreaming"
             @click="selectConversation(session)"
+            @contextmenu.stop.prevent="openConversationContextMenu($event, session)"
           >
             <span class="conversation-item-title">{{ session.title }}</span>
             <span class="conversation-item-time">{{ session.timeLabel }}</span>
@@ -114,13 +143,81 @@
     <!-- Live2D 看板娘 -->
     <Live2DWidget v-if="authStore.isLoggedIn" />
 
-    <!-- 登录/注册模态框 -->
-    <AuthModal
-      v-model="showAuth"
-      @logged-in="onLoggedIn"
-    />
+    <Teleport to="body">
+      <div
+        v-if="activityTooltip.visible && activityTooltip.day"
+        class="activity-tooltip"
+        role="tooltip"
+        :style="{ left: `${activityTooltip.x}px`, top: `${activityTooltip.y}px` }"
+      >
+        <div class="activity-tooltip-date">{{ activityTooltip.day.displayDate }}</div>
+        <div class="activity-tooltip-row">
+          <span>对话次数</span>
+          <strong>{{ activityTooltip.day.conversationCount }} 次</strong>
+        </div>
+        <div class="activity-tooltip-row">
+          <span>成果提交</span>
+          <strong>{{ activityTooltip.day.submissionCount }} 次</strong>
+        </div>
+        <div class="activity-tooltip-row">
+          <span>活跃度</span>
+          <strong>{{ activityTooltip.day.score }}</strong>
+        </div>
+      </div>
+    </Teleport>
 
+    <Teleport to="body">
+      <div
+        v-if="conversationContextMenu.visible && conversationContextMenu.target"
+        class="conversation-context-menu"
+        role="menu"
+        :style="{ left: `${conversationContextMenu.x}px`, top: `${conversationContextMenu.y}px` }"
+        @click.stop
+      >
+        <button
+          class="conversation-context-action danger"
+          type="button"
+          role="menuitem"
+          @click="promptConversationDeletion"
+        >
+          <UiIcon name="delete" />
+          <span>删除对话</span>
+        </button>
+      </div>
+    </Teleport>
 
+    <el-dialog
+      v-model="showConversationDeleteDialog"
+      :align-center="true"
+      :show-close="true"
+      :close-on-click-modal="!deletingConversation"
+      :close-on-press-escape="!deletingConversation"
+      :lock-scroll="true"
+      width="390px"
+      modal-class="plan-expand-overlay"
+      @closed="clearConversationDeletion"
+    >
+      <h2 class="acct-title">删除对话</h2>
+      <p class="conversation-delete-copy">
+        确定删除“{{ conversationToDelete?.title }}”吗？该对话的学习画像、计划与成果也会一并删除。
+      </p>
+      <p v-if="conversationDeleteError" class="error-msg">{{ conversationDeleteError }}</p>
+      <div class="acct-footer">
+        <el-button
+          size="large"
+          class="cancel-btn"
+          :disabled="deletingConversation"
+          @click="showConversationDeleteDialog = false"
+        >取消</el-button>
+        <button
+          class="submit-btn delete-submit-btn"
+          :disabled="deletingConversation"
+          @click="confirmConversationDeletion"
+        >
+          {{ deletingConversation ? '删除中...' : '确认删除' }}
+        </button>
+      </div>
+    </el-dialog>
 
     <!-- 账号管理模态框 -->
     <AccountModal
@@ -191,24 +288,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from './stores/authStore'
 import { useChatStore } from './stores/chatStore'
 import type { Message } from './stores/chatStore'
-import { deleteAccountApi, fetchConversationsApi, fetchCurrentUserApi, fetchLearningActivityApi, fetchUploadedFilesApi, logoutApi } from './services/api'
+import { deleteAccountApi, deleteConversationApi, fetchConversationsApi, fetchCurrentUserApi, fetchLearningActivityApi, fetchUploadedFilesApi, logoutApi } from './services/api'
 import type { AuthUser, ConversationRecord, DailyLearningActivity } from './services/api'
-import { fallbackConversationTitle, readConversationTitles } from './services/conversationTitles'
+import { deleteConversationTitle, fallbackConversationTitle, readConversationTitles } from './services/conversationTitles'
+import { ElMessage } from 'element-plus'
 import ChatView from './views/ChatView.vue'
 import Live2DWidget from './components/Live2DWidget.vue'
-import AuthModal from './components/AuthModal.vue'
+import AuthView from './views/AuthView.vue'
 import UserMenu from './components/UserMenu.vue'
 import AccountModal from './components/AccountModal.vue'
 import UiIcon from './components/UiIcon.vue'
+import PracticeWorkspace from './components/PracticeWorkspace.vue'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const showAccountModal = ref(false)
 const showAuth = ref(!authStore.isLoggedIn)
+const practiceOpen = ref(false)
 const HEADER_TAB_KEY = 'edu-agent-header-tab'
 const activeHeaderTab = ref<'data' | 'files'>(
   localStorage.getItem(HEADER_TAB_KEY) === 'files' ? 'files' : 'data'
@@ -216,9 +316,51 @@ const activeHeaderTab = ref<'data' | 'files'>(
 watch(activeHeaderTab, value => localStorage.setItem(HEADER_TAB_KEY, value))
 
 // 贡献图数据（16周 = 112天）
-type ContributionDay = DailyLearningActivity & { count: number }
+type ContributionDay = DailyLearningActivity & { count: number; displayDate: string }
 const contributionData = ref<ContributionDay[]>([])
 const uploadedFiles = ref<{ id: number; name: string; time: string }[]>([])
+const activityTooltip = reactive<{
+  visible: boolean
+  x: number
+  y: number
+  day: ContributionDay | null
+}>({ visible: false, x: 0, y: 0, day: null })
+
+function moveActivityTooltip(event: MouseEvent) {
+  const tooltipWidth = 176
+  const tooltipHeight = 126
+  const gap = 12
+  const viewportPadding = 8
+  const fitsRight = event.clientX + gap + tooltipWidth <= window.innerWidth - viewportPadding
+  const fitsBelow = event.clientY + gap + tooltipHeight <= window.innerHeight - viewportPadding
+  activityTooltip.x = Math.max(
+    viewportPadding,
+    fitsRight ? event.clientX + gap : event.clientX - tooltipWidth - gap,
+  )
+  activityTooltip.y = Math.max(
+    viewportPadding,
+    fitsBelow ? event.clientY + gap : event.clientY - tooltipHeight - gap,
+  )
+}
+
+function showActivityTooltip(event: MouseEvent, day: ContributionDay) {
+  activityTooltip.day = day
+  activityTooltip.visible = true
+  moveActivityTooltip(event)
+}
+
+function hideActivityTooltip() {
+  activityTooltip.visible = false
+  activityTooltip.day = null
+}
+
+function formatActivityDate(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  if (!year || !month || !day) return isoDate
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const weekday = weekdays[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]
+  return `${year}/${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')} ${weekday}`
+}
 
 async function loadContributionData() {
   const userId = authStore.user?.id
@@ -230,7 +372,7 @@ async function loadContributionData() {
     const data = await fetchLearningActivityApi(userId, 112)
     contributionData.value = data.map(day => ({
       ...day,
-      date: day.date.slice(5).replace('-', '/'),
+      displayDate: formatActivityDate(day.date),
       count: day.level,
     }))
   } catch (err) {
@@ -275,7 +417,28 @@ interface ConversationSession {
 }
 
 const conversationSessions = ref<ConversationSession[]>([])
+const isConversationListScrolling = ref(false)
+const conversationContextMenu = reactive<{
+  visible: boolean
+  x: number
+  y: number
+  target: ConversationSession | null
+}>({ visible: false, x: 0, y: 0, target: null })
+const showConversationDeleteDialog = ref(false)
+const conversationToDelete = ref<ConversationSession | null>(null)
+const deletingConversation = ref(false)
+const conversationDeleteError = ref('')
 let hasInitializedConversations = false
+let conversationScrollTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleConversationListScroll() {
+  isConversationListScrolling.value = true
+  if (conversationScrollTimer) clearTimeout(conversationScrollTimer)
+  conversationScrollTimer = setTimeout(() => {
+    isConversationListScrolling.value = false
+    conversationScrollTimer = null
+  }, 700)
+}
 
 function formatConversationTime(timestamp: number) {
   const date = new Date(timestamp)
@@ -290,7 +453,7 @@ async function loadConversationSessions() {
   const userId = authStore.user?.id
   if (!userId) {
     conversationSessions.value = []
-    return
+    return []
   }
   try {
     const records = await fetchConversationsApi(userId, 300)
@@ -328,14 +491,16 @@ async function loadConversationSessions() {
 
     if (!hasInitializedConversations) {
       hasInitializedConversations = true
-      if (sessions.length > 0 && !chatStore.conversationId) {
+      if (sessions.length > 0) {
         selectConversation(sessions[0])
-      } else if (sessions.length === 0 && chatStore.messages.length === 0) {
+      } else {
         startNewConversation()
       }
     }
+    return sessions
   } catch (err) {
     console.warn('对话列表加载失败', err)
+    return conversationSessions.value
   }
 }
 
@@ -355,6 +520,74 @@ function startNewConversation() {
   window.dispatchEvent(new CustomEvent('new-conversation', {
     detail: { conversationId },
   }))
+}
+
+function openConversationContextMenu(event: MouseEvent, session: ConversationSession) {
+  if (chatStore.isStreaming) return
+  const menuWidth = 144
+  const menuHeight = 48
+  const padding = 8
+  conversationContextMenu.x = Math.max(
+    padding,
+    Math.min(event.clientX, window.innerWidth - menuWidth - padding),
+  )
+  conversationContextMenu.y = Math.max(
+    padding,
+    Math.min(event.clientY, window.innerHeight - menuHeight - padding),
+  )
+  conversationContextMenu.target = session
+  conversationContextMenu.visible = true
+}
+
+function closeConversationContextMenu() {
+  conversationContextMenu.visible = false
+}
+
+function handleConversationMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeConversationContextMenu()
+}
+
+function promptConversationDeletion() {
+  if (!conversationContextMenu.target) return
+  conversationToDelete.value = conversationContextMenu.target
+  conversationDeleteError.value = ''
+  closeConversationContextMenu()
+  showConversationDeleteDialog.value = true
+}
+
+function clearConversationDeletion() {
+  if (deletingConversation.value) return
+  conversationToDelete.value = null
+  conversationDeleteError.value = ''
+}
+
+async function confirmConversationDeletion() {
+  const target = conversationToDelete.value
+  const userId = authStore.user?.id
+  if (!target || !userId || deletingConversation.value) return
+
+  deletingConversation.value = true
+  conversationDeleteError.value = ''
+  try {
+    await deleteConversationApi(target.id)
+    deleteConversationTitle(userId, target.id)
+    const deletedCurrentConversation = chatStore.conversationId === target.id
+    const remaining = await loadConversationSessions()
+    showConversationDeleteDialog.value = false
+
+    if (deletedCurrentConversation) {
+      if (remaining.length > 0) selectConversation(remaining[0])
+      else startNewConversation()
+    }
+
+    window.dispatchEvent(new Event('learning-activity-updated'))
+    window.dispatchEvent(new Event('file-history-updated'))
+    ElMessage.success('对话已删除')
+  } catch (err) {
+    conversationDeleteError.value = err instanceof Error ? err.message : '删除对话失败'
+  } finally {
+    deletingConversation.value = false
+  }
 }
 
 function handleConversationListUpdated() {
@@ -385,13 +618,22 @@ onMounted(async () => {
   window.addEventListener('file-history-updated', handleFileHistoryUpdated)
   window.addEventListener('conversation-list-updated', handleConversationListUpdated)
   window.addEventListener('conversation-title-updated', handleConversationTitleUpdated)
+  document.addEventListener('click', closeConversationContextMenu)
+  document.addEventListener('keydown', handleConversationMenuKeydown)
+  window.addEventListener('resize', closeConversationContextMenu)
+  window.addEventListener('blur', closeConversationContextMenu)
 })
 
 onUnmounted(() => {
+  if (conversationScrollTimer) clearTimeout(conversationScrollTimer)
   window.removeEventListener('learning-activity-updated', handleActivityUpdated)
   window.removeEventListener('file-history-updated', handleFileHistoryUpdated)
   window.removeEventListener('conversation-list-updated', handleConversationListUpdated)
   window.removeEventListener('conversation-title-updated', handleConversationTitleUpdated)
+  document.removeEventListener('click', closeConversationContextMenu)
+  document.removeEventListener('keydown', handleConversationMenuKeydown)
+  window.removeEventListener('resize', closeConversationContextMenu)
+  window.removeEventListener('blur', closeConversationContextMenu)
 })
 
 // 退出登录确认
@@ -509,6 +751,41 @@ function onLoggedIn(user: AuthUser) {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover,
+*.scrolling {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*.scrolling::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -517,6 +794,38 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* 所有 Element Plus 模态框统一相对视口居中，不受三栏布局宽度影响。 */
+.el-overlay-dialog {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+.el-overlay-dialog .el-dialog {
+  display: flex;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+.el-overlay-dialog .el-dialog__body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 560px) {
+  .el-overlay-dialog { padding: 12px; }
+  .el-overlay-dialog .el-dialog {
+    width: 100% !important;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
 }
 
 /* 移除 Chrome 自动填充的蓝色底纹 */
@@ -618,6 +927,42 @@ input:-webkit-autofill:active {
   flex: 1;
   overflow: hidden;
 }
+
+.practice-toggle {
+  position: fixed;
+  left: 50%;
+  top: 64px;
+  bottom: auto;
+  z-index: 1100;
+  width: 84px;
+  height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-solid);
+  border-radius: 10px;
+  background: var(--ai-bubble-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: none;
+  filter: none;
+  outline: none;
+  appearance: none;
+  color: var(--accent);
+  cursor: pointer;
+  transform: translate(-50%, calc(100dvh - 89px));
+  transition: transform 240ms ease, background-color .2s ease;
+}
+.practice-toggle:hover { background: var(--bg-hover); }
+.practice-toggle .ui-icon { width: 15px; height: 15px; }
+.practice-toggle.open {
+  transform: translate(-50%, 0);
+}
+.practice-sheet-enter-active,
+.practice-sheet-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
+.practice-sheet-enter-from,
+.practice-sheet-leave-to { transform: translateY(100%); opacity: 0; }
 
 
 /* ===== 注销弹窗样式（与账号管理模态框统一） ===== */
@@ -793,8 +1138,6 @@ input:-webkit-autofill:active {
   padding-right: 2px;
   overflow-y: auto;
 }
-.conversation-list::-webkit-scrollbar { width: 3px; }
-.conversation-list::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 .conversation-item {
   width: 100%;
   min-width: 0;
@@ -845,13 +1188,104 @@ input:-webkit-autofill:active {
 .graph-grid {
   display: grid;
   grid-template-columns: repeat(16, minmax(8px, 10px));
+  grid-template-rows: repeat(7, minmax(8px, 10px));
+  grid-auto-flow: column;
   justify-content: space-between;
   gap: 2px;
+}
+.conversation-context-menu {
+  position: fixed;
+  z-index: 4200;
+  width: 144px;
+  padding: 5px;
+  border: 1px solid var(--border-solid);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.conversation-context-action {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.conversation-context-action .ui-icon {
+  width: 15px;
+  height: 15px;
+}
+.conversation-context-action:hover {
+  background: rgba(231, 76, 60, 0.1);
+}
+.conversation-context-action.danger {
+  color: var(--danger);
+}
+.conversation-delete-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
 }
 .graph-cell {
   aspect-ratio: 1;
   background: var(--accent);
   border-radius: 2px;
+  cursor: default;
+}
+.activity-tooltip {
+  position: fixed;
+  z-index: 9999;
+  width: 176px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  color: #3D4255;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  font-size: 12px;
+  line-height: 1.4;
+  animation: activity-tooltip-in 0.12s ease-out;
+}
+[data-theme="dark"] .activity-tooltip {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ece6e0;
+  background: rgba(40, 36, 32, 0.95);
+}
+.activity-tooltip-date {
+  margin-bottom: 7px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-solid);
+  color: var(--text-primary);
+  font-weight: 650;
+}
+.activity-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 21px;
+}
+.activity-tooltip-row span { color: var(--text-faint); }
+.activity-tooltip-row strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+@keyframes activity-tooltip-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .graph-legend {
   display: flex;

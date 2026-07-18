@@ -4,7 +4,9 @@ import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.UploadedFileRecord;
 import com.edu.agent.repository.UploadedFileRecordRepository;
 import com.edu.agent.security.CurrentUser;
+import com.edu.agent.service.KnowledgeBaseService;
 import com.edu.agent.service.RequestRateLimiter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -19,6 +21,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -39,15 +42,21 @@ public class FileController {
 
     private final UploadedFileRecordRepository uploadedFileRepository;
     private final RequestRateLimiter rateLimiter;
+    private final ObjectMapper objectMapper;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
     public FileController(UploadedFileRecordRepository uploadedFileRepository,
-                          RequestRateLimiter rateLimiter) {
+                          RequestRateLimiter rateLimiter,
+                          ObjectMapper objectMapper,
+                          KnowledgeBaseService knowledgeBaseService) {
         this.uploadedFileRepository = uploadedFileRepository;
         this.rateLimiter = rateLimiter;
+        this.objectMapper = objectMapper;
+        this.knowledgeBaseService = knowledgeBaseService;
     }
 
     /**
@@ -113,16 +122,37 @@ public class FileController {
 
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> result = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(response.body(), Map.class);
+                Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
                 UploadedFileRecord record = new UploadedFileRecord();
                 record.setUserId(userId);
                 record.setConversationId(conversationId == null || conversationId.isBlank()
                         ? null : conversationId.trim());
                 record.setFileName(originalFilename);
                 record.setSizeBytes(file.getSize());
-                record.setPurpose("SUBMISSION".equalsIgnoreCase(purpose) ? "SUBMISSION" : "CHAT");
+                String normalizedPurpose = switch (purpose == null
+                        ? "CHAT" : purpose.trim().toUpperCase(java.util.Locale.ROOT)) {
+                    case "SUBMISSION" -> "SUBMISSION";
+                    case "KNOWLEDGE" -> "KNOWLEDGE";
+                    default -> "CHAT";
+                };
+                record.setPurpose(normalizedPurpose);
                 uploadedFileRepository.save(record);
+
+                // 前端只使用 text 预览；完整解析正文仅在后端入库，避免污染聊天消息。
+                Object fullTextValue = result.remove("full_text");
+                String fullText = fullTextValue == null
+                        ? String.valueOf(result.getOrDefault("text", ""))
+                        : String.valueOf(fullTextValue);
+                try {
+                    var knowledgeDocument = knowledgeBaseService.indexParsedFile(
+                            userId, conversationId, originalFilename, normalizedPurpose, fullText);
+                    result.put("knowledge_document_id", knowledgeDocument.getId());
+                    result.put("knowledge_chunk_count", knowledgeDocument.getChunkCount());
+                    result.put("knowledge_scope", knowledgeDocument.getScope());
+                } catch (Exception indexException) {
+                    log.warn("文件已解析但知识库索引失败: {}", indexException.getMessage());
+                    result.put("knowledge_indexed", false);
+                }
                 return ResponseEntity.ok(ApiResponse.success(result));
             } else {
                 log.error("Python AI 返回错误: {} {}", response.statusCode(), response.body());

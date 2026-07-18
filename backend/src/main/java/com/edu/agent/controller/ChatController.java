@@ -6,6 +6,7 @@ import com.edu.agent.model.Conversation;
 import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.service.ChatService;
 import com.edu.agent.service.ConversationSessionService;
+import com.edu.agent.service.ConversationDeletionService;
 import com.edu.agent.service.RequestRateLimiter;
 import com.edu.agent.security.CurrentUser;
 import org.slf4j.Logger;
@@ -43,16 +44,19 @@ public class ChatController {
     private final ChatService chatService;
     private final ConversationRepository conversationRepository;
     private final ConversationSessionService conversationSessionService;
+    private final ConversationDeletionService conversationDeletionService;
     private final RequestRateLimiter rateLimiter;
 
     /** 【Spring Boot】构造器注入 */
     public ChatController(ChatService chatService,
                           ConversationRepository conversationRepository,
                           ConversationSessionService conversationSessionService,
+                          ConversationDeletionService conversationDeletionService,
                           RequestRateLimiter rateLimiter) {
         this.chatService = chatService;
         this.conversationRepository = conversationRepository;
         this.conversationSessionService = conversationSessionService;
+        this.conversationDeletionService = conversationDeletionService;
         this.rateLimiter = rateLimiter;
     }
 
@@ -129,6 +133,18 @@ public class ChatController {
         messages.forEach(message -> message.setConversationTitle(
                 titles.get(message.getConversationId())));
         return ApiResponse.success("ok", messages);
+    }
+
+    /** DELETE /api/conversations/{conversationId} — 删除当前用户的一整个对话工作区。 */
+    @DeleteMapping("/conversations/{conversationId}")
+    public ApiResponse<Map<String, String>> deleteConversation(
+            @PathVariable String conversationId, Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (!conversationDeletionService.delete(userId, conversationId)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.NOT_FOUND, "对话不存在");
+        }
+        return ApiResponse.success("对话已删除", Map.of("conversationId", conversationId));
     }
 
     /** POST /api/conversations/title —— 基于当前会话的整体内容生成简短标题。 */

@@ -357,16 +357,16 @@ public class SubmissionService {
                     "这是你认真走过的又一步。玛丽会记住这份进步，也会陪你继续向前。"));
             evaluationRepository.save(evaluation);
 
-            // 6. 更新提交状态为已评价
-            submission.setStatus(TaskSubmission.STATUS_EVALUATED);
-            submission.setProcessingStartedAt(null);
-            submissionRepository.save(submission);
-
             try {
                 applyEvaluationToLearningLoop(submission, score, analysis, suggestion, weaknesses);
             } catch (Exception loopError) {
                 log.warn("成果评价已保存，但学习闭环更新失败: {}", loopError.getMessage());
             }
+
+            // 最后发布完成状态：轮询方一旦看到 EVALUATED，画像与会话记忆也已回写完毕。
+            submission.setStatus(TaskSubmission.STATUS_EVALUATED);
+            submission.setProcessingStartedAt(null);
+            submissionRepository.save(submission);
 
             log.info(">>> AI 评价完成, submissionId={}, score={}", submissionId, score);
 

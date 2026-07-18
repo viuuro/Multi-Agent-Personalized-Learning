@@ -34,7 +34,7 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, Long> 
     Optional<UserProfile> findFirstByUserIdOrderByUpdatedAtDesc(Long userId);
 
     /** 查询指定用户在指定对话中的最新画像。 */
-    Optional<UserProfile> findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(
+    Optional<UserProfile> findFirstByUserIdAndConversationIdOrderByUpdatedAtDescIdDesc(
             Long userId, String conversationId);
 
     /**
@@ -42,4 +42,6 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, Long> 
      * 自动生成 SQL: DELETE FROM user_profile WHERE user_id = ?
      */
     void deleteByUserId(Long userId);
+
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

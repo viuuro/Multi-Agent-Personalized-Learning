@@ -6,6 +6,7 @@ import com.edu.agent.model.LearningPlan;
 import com.edu.agent.repository.LearningPlanRepository;
 import com.edu.agent.service.AgentOrchestrationService;
 import com.edu.agent.service.LearningPlanVersionService;
+import com.edu.agent.service.RequestRateLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,8 +14,9 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import org.springframework.security.core.Authentication;
 
 class PlanControllerTest {
 
@@ -26,22 +28,22 @@ class PlanControllerTest {
                 mock(AgentOrchestrationService.class),
                 mock(LearningPlanRepository.class),
                 mock(LearningPlanVersionService.class),
+                new RequestRateLimiter(),
                 new ObjectMapper());
     }
 
-    @Test
-    void reportsMissingUserIdAsClientInputError() {
-        assertThatThrownBy(() -> controller.generatePlan(Map.of("conversationId", "conversation-1")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("缺少 userId");
+    private Authentication authenticatedUser() {
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getName()).thenReturn("1");
+        return authentication;
     }
 
     @Test
     void rejectsMalformedPlanBeforePersistence() {
         ApiResponse<LearningPlan> response = controller.savePlan(Map.of(
-                "userId", 1,
                 "conversationId", "conversation-1",
-                "plan", "not-an-object"));
+                "plan", "not-an-object"), authenticatedUser());
 
         assertThat(response.getCode()).isEqualTo(400);
         assertThat(response.getMessage()).contains("plan");

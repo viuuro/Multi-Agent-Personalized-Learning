@@ -49,6 +49,9 @@ public class AuthService {
     private final UploadedFileRecordRepository uploadedFileRecordRepository;
     private final ProfileEvidenceRepository profileEvidenceRepository;
     private final AgentDecisionRecordRepository agentDecisionRecordRepository;
+    private final KnowledgeDocumentRepository knowledgeDocumentRepository;
+    private final KnowledgeChunkRepository knowledgeChunkRepository;
+    private final PracticeQuestionRepository practiceQuestionRepository;
     private final PasswordEncoder passwordEncoder;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
@@ -63,6 +66,9 @@ public class AuthService {
                        UploadedFileRecordRepository uploadedFileRecordRepository,
                        ProfileEvidenceRepository profileEvidenceRepository,
                        AgentDecisionRecordRepository agentDecisionRecordRepository,
+                       KnowledgeDocumentRepository knowledgeDocumentRepository,
+                       KnowledgeChunkRepository knowledgeChunkRepository,
+                       PracticeQuestionRepository practiceQuestionRepository,
                        PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
@@ -75,6 +81,9 @@ public class AuthService {
         this.uploadedFileRecordRepository = uploadedFileRecordRepository;
         this.profileEvidenceRepository = profileEvidenceRepository;
         this.agentDecisionRecordRepository = agentDecisionRecordRepository;
+        this.knowledgeDocumentRepository = knowledgeDocumentRepository;
+        this.knowledgeChunkRepository = knowledgeChunkRepository;
+        this.practiceQuestionRepository = practiceQuestionRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -283,6 +292,9 @@ public class AuthService {
         uploadedFileRecordRepository.deleteByUserId(userId);
         profileEvidenceRepository.deleteByUserId(userId);
         agentDecisionRecordRepository.deleteByUserId(userId);
+        knowledgeChunkRepository.deleteByUserId(userId);
+        knowledgeDocumentRepository.deleteByUserId(userId);
+        practiceQuestionRepository.deleteByUserId(userId);
 
         // 删除用户账户
         userRepository.delete(user);

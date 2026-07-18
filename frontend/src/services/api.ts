@@ -39,6 +39,42 @@ export interface LearningPlan {
   weeks: LearningPlanWeek[]
 }
 
+export type PracticeQuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER'
+export type PracticeDifficulty = 'EASY' | 'MEDIUM' | 'HARD'
+export type PracticeQuestionStatus = 'UNANSWERED' | 'DRAFT' | 'SUBMITTED'
+
+export interface PracticeQuestion {
+  id: number
+  batchId: string
+  conversationId: string
+  weekNumber: number
+  taskIndex: number
+  weekTopic: string
+  taskTitle: string
+  questionType: PracticeQuestionType
+  difficulty: PracticeDifficulty
+  questionText: string
+  options: string[]
+  userAnswer?: string
+  status: PracticeQuestionStatus
+  correctAnswer?: string
+  explanation?: string
+  correct?: boolean
+  score?: number
+  createdAt: string
+  updatedAt: string
+  submittedAt?: string
+}
+
+export interface GeneratePracticeQuestionsPayload {
+  conversationId: string
+  weekNumber: number
+  taskIndex: number
+  questionType: PracticeQuestionType
+  difficulty: PracticeDifficulty
+  count: number
+}
+
 /** 登录/注册返回的用户信息 */
 export interface AuthUser {
   id: number
@@ -62,8 +98,36 @@ export interface UploadedFileRecord {
   conversationId?: string
   fileName: string
   sizeBytes: number
-  purpose: 'CHAT' | 'SUBMISSION'
+  purpose: 'CHAT' | 'SUBMISSION' | 'KNOWLEDGE'
   uploadedAt: string
+}
+
+export interface KnowledgeDocument {
+  id: number
+  userId?: number
+  conversationId?: string
+  scope: 'GLOBAL' | 'USER' | 'CONVERSATION'
+  sourceType: 'BUILTIN' | 'UPLOAD'
+  title: string
+  sourceUri?: string
+  license?: string
+  status: 'INDEXING' | 'READY' | 'ERROR'
+  characterCount: number
+  chunkCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeSearchResult {
+  chunkId: number
+  documentId: number
+  documentTitle: string
+  heading?: string
+  content: string
+  sourceUri?: string
+  license?: string
+  scope: 'GLOBAL' | 'USER' | 'CONVERSATION'
+  score: number
 }
 
 export interface SubmissionEvaluation {
@@ -112,10 +176,14 @@ export interface SubmissionDetail {
  * @param options 可选的 fetch 配置（method、body 等）
  */
 async function request<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
+  const headers = new Headers(options?.headers)
+  if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     ...options,
+    headers,
   })
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null) as ApiResponse<unknown> | null
@@ -219,15 +287,33 @@ export async function logoutApi(): Promise<void> {
  */
 export async function parseFileApi(
   file: File,
-  context?: { userId?: number; conversationId?: string; purpose?: 'CHAT' | 'SUBMISSION' }
-): Promise<{ text: string; filename: string; length: number }> {
+  context?: { userId?: number; conversationId?: string; purpose?: 'CHAT' | 'SUBMISSION' | 'KNOWLEDGE' }
+): Promise<{
+  text: string
+  filename: string
+  length: number
+  indexed_length?: number
+  truncated?: boolean
+  knowledge_document_id?: number
+  knowledge_chunk_count?: number
+  knowledge_scope?: 'GLOBAL' | 'USER' | 'CONVERSATION'
+}> {
   const formData = new FormData()
   formData.append('file', file)
   if (context?.userId) formData.append('userId', String(context.userId))
   if (context?.conversationId) formData.append('conversationId', context.conversationId)
   if (context?.purpose) formData.append('purpose', context.purpose)
 
-  const res = await request<{ text: string; filename: string; length: number }>('/parse-file', {
+  const res = await request<{
+    text: string
+    filename: string
+    length: number
+    indexed_length?: number
+    truncated?: boolean
+    knowledge_document_id?: number
+    knowledge_chunk_count?: number
+    knowledge_scope?: 'GLOBAL' | 'USER' | 'CONVERSATION'
+  }>('/parse-file', {
     method: 'POST',
     credentials: 'include',
     body: formData,
@@ -235,19 +321,77 @@ export async function parseFileApi(
   return res.data
 }
 
+export async function fetchPracticeQuestionsApi(conversationId: string): Promise<PracticeQuestion[]> {
+  const res = await request<PracticeQuestion[]>(
+    `/practice/questions?conversationId=${encodeURIComponent(conversationId)}`
+  )
+  return res.data || []
+}
+
+export async function generatePracticeQuestionsApi(
+  payload: GeneratePracticeQuestionsPayload
+): Promise<PracticeQuestion[]> {
+  const res = await request<PracticeQuestion[]>('/practice/questions/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.data || []
+}
+
+export async function savePracticeAnswerApi(questionId: number, answer: string): Promise<PracticeQuestion> {
+  const res = await request<PracticeQuestion>(`/practice/questions/${questionId}/answer`, {
+    method: 'PUT',
+    body: JSON.stringify({ answer }),
+  })
+  return res.data
+}
+
+export async function submitPracticeAnswerApi(questionId: number, answer: string): Promise<PracticeQuestion> {
+  const res = await request<PracticeQuestion>(`/practice/questions/${questionId}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  })
+  return res.data
+}
+
+export async function fetchKnowledgeDocumentsApi(
+  conversationId?: string,
+  limit = 100,
+): Promise<KnowledgeDocument[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (conversationId) params.set('conversationId', conversationId)
+  const res = await request<KnowledgeDocument[]>(`/knowledge/documents?${params}`)
+  return res.data
+}
+
+export async function searchKnowledgeApi(
+  query: string,
+  conversationId?: string,
+  limit = 6,
+): Promise<KnowledgeSearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) })
+  if (conversationId) params.set('conversationId', conversationId)
+  const res = await request<KnowledgeSearchResult[]>(`/knowledge/search?${params}`)
+  return res.data
+}
+
+export async function deleteKnowledgeDocumentApi(documentId: number): Promise<void> {
+  await request<void>(`/knowledge/documents/${documentId}`, { method: 'DELETE' })
+}
+
 /** 使用当前登录用户的克隆音色生成 WAV；signal 用于切换消息时取消过期请求。 */
 export async function fetchVoiceAudio(
-  userId: number,
+  _userId: number,
   username: string,
   text: string,
   style = '',
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/voice/synthesize`, {
+  const res = await fetch(`${BASE_URL}/voice/welcome`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': String(userId),
     },
     body: JSON.stringify({ username, text, style }),
     signal,
@@ -258,23 +402,9 @@ export async function fetchVoiceAudio(
   return res.blob()
 }
 
-export async function fetchUploadedFilesApi(userId: number, limit = 50): Promise<UploadedFileRecord[]> {
-  const res = await request<UploadedFileRecord[]>(`/files?userId=${userId}&limit=${limit}`)
-  return res.data || []
-}
-
 /** POST /api/voice/welcome —— 生成当前欢迎文字的克隆 WAV 音频。 */
-export async function fetchWelcomeVoice(username: string, text: string, style = ''): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/voice/welcome`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, text, style }),
-  })
-  if (!res.ok) {
-    throw new Error(`欢迎语音生成失败：HTTP ${res.status}`)
-  }
-  return res.blob()
+export function fetchWelcomeVoice(username: string, text: string, style = ''): Promise<Blob> {
+  return fetchVoiceAudio(0, username, text, style)
 }
 
 export async function fetchUploadedFilesApi(userId: number, limit = 50): Promise<UploadedFileRecord[]> {
@@ -322,6 +452,13 @@ export interface ConversationRecord {
 export async function fetchConversationsApi(userId: number, limit = 50): Promise<ConversationRecord[]> {
   const res = await request<ConversationRecord[]>(`/conversations?userId=${userId}&limit=${limit}`)
   return res.data || []
+}
+
+/** DELETE /api/conversations/{conversationId} — 删除一个对话及其独立工作区数据。 */
+export async function deleteConversationApi(conversationId: string): Promise<void> {
+  await request(`/conversations/${encodeURIComponent(conversationId)}`, {
+    method: 'DELETE',
+  })
 }
 
 /** POST /api/conversations/title —— 分析整体对话并返回简化标题 */

@@ -23,6 +23,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Proxies generated welcome audio so the browser only communicates with Spring Boot. */
 @RestController
@@ -37,9 +39,16 @@ public class VoiceController {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final RequestRateLimiter rateLimiter;
+    private final ConcurrentHashMap<Long, AtomicInteger> inFlightRequests = new ConcurrentHashMap<>();
 
     @Value("${python.ai.url:http://localhost:8000}")
     private String pythonAiUrl;
+
+    @Value("${voice.rate-limit-per-minute:10}")
+    private int rateLimitPerMinute;
+
+    @Value("${voice.max-concurrent-per-user:2}")
+    private int maxConcurrentPerUser;
 
     public VoiceController(ObjectMapper objectMapper, RequestRateLimiter rateLimiter) {
         this.objectMapper = objectMapper;
@@ -49,13 +58,15 @@ public class VoiceController {
                 .build();
     }
 
-    /** POST /api/voice/welcome - create one non-cached voice-cloned welcome message. */
+    /** POST /api/voice/welcome - synthesize voice-cloned audio for the current user. */
     @PostMapping(value = "/welcome", produces = "audio/wav")
     public ResponseEntity<byte[]> welcome(@RequestBody(required = false) Map<String, String> body,
                                           Authentication authentication) {
         Long userId = CurrentUser.id(authentication);
-        if (!rateLimiter.tryAcquire("voice:" + userId, 10, 60)) {
-            return ResponseEntity.status(429).build();
+        if (!rateLimiter.tryAcquire("voice:" + userId, Math.max(1, rateLimitPerMinute), 60)) {
+            return ResponseEntity.status(429)
+                    .header(HttpHeaders.RETRY_AFTER, "60")
+                    .build();
         }
         String username = body == null ? "" : body.getOrDefault("username", "");
         String text = body == null ? "" : body.getOrDefault("text", "");
@@ -68,6 +79,14 @@ public class VoiceController {
                 || text.length() > MAX_TEXT_LENGTH
                 || style.length() > MAX_STYLE_LENGTH) {
             return ResponseEntity.badRequest().build();
+        }
+
+        AtomicInteger inFlight = inFlightRequests.computeIfAbsent(userId, ignored -> new AtomicInteger());
+        if (inFlight.incrementAndGet() > Math.max(1, maxConcurrentPerUser)) {
+            if (inFlight.decrementAndGet() <= 0) inFlightRequests.remove(userId, inFlight);
+            return ResponseEntity.status(429)
+                    .header(HttpHeaders.RETRY_AFTER, "5")
+                    .build();
         }
 
         try {
@@ -98,14 +117,18 @@ public class VoiceController {
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("audio/wav"))
                     .cacheControl(CacheControl.noStore())
+                    .header("X-Voice-Cache", response.headers()
+                            .firstValue("X-Voice-Cache").orElse("UNKNOWN"))
                     .body(response.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             log.warn("Welcome voice request interrupted");
             return ResponseEntity.status(503).build();
         } catch (Exception exception) {
-            log.warn("Welcome voice request failed: {}", exception.getMessage());
+            log.warn("Voice synthesis request failed", exception);
             return ResponseEntity.status(503).build();
+        } finally {
+            if (inFlight.decrementAndGet() <= 0) inFlightRequests.remove(userId, inFlight);
         }
     }
 }

@@ -76,6 +76,7 @@ public class ChatService {
     private final ProfileEvidenceService profileEvidenceService;
     private final AgentDecisionService agentDecisionService;
     private final LearningPlanVersionService planVersionService;
+    private final KnowledgeBaseService knowledgeBaseService;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置的 HTTP 客户端，用于调用 Python AI 服务 */
@@ -100,6 +101,7 @@ public class ChatService {
                        ProfileEvidenceService profileEvidenceService,
                        AgentDecisionService agentDecisionService,
                        LearningPlanVersionService planVersionService,
+                       KnowledgeBaseService knowledgeBaseService,
                        @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.conversationRepository = conversationRepository;
         this.profileService = profileService;
@@ -110,6 +112,7 @@ public class ChatService {
         this.profileEvidenceService = profileEvidenceService;
         this.agentDecisionService = agentDecisionService;
         this.planVersionService = planVersionService;
+        this.knowledgeBaseService = knowledgeBaseService;
         // MiMo API Key 只需要配置在 Python AI 服务中；Spring 默认始终调用 Python。
         // 只有显式设置 AI_MOCK_ENABLED=true 时才启用本地 Mock 模式。
         this.mockMode = mockMode;
@@ -282,6 +285,13 @@ public class ChatService {
             body.put("profile_evidence_json",
                     profileEvidenceService.buildEvidenceJson(userId, conversationId));
             body.put("recent_responses_json", buildRecentAssistantResponses(userId, conversationId));
+            String knowledgeContext = knowledgeBaseService.buildContext(
+                    userId, conversationId, userMessage, 6);
+            body.put("knowledge_context", knowledgeContext);
+            if (!knowledgeContext.isBlank()) {
+                log.info("知识库命中: userId={}, conversationId={}, contextLength={}",
+                        userId, conversationId, knowledgeContext.length());
+            }
             if (imageData != null && !imageData.isEmpty()) {
                 // 有图片时，传递图片数据
                 log.info(">>> 传递图片数据给 Python AI，imageData 长度: {}", imageData.length());

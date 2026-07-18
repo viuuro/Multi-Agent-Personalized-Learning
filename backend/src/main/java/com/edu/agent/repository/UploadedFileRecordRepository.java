@@ -11,4 +11,5 @@ import java.util.List;
 public interface UploadedFileRecordRepository extends JpaRepository<UploadedFileRecord, Long> {
     List<UploadedFileRecord> findByUserIdOrderByUploadedAtDesc(Long userId, Pageable pageable);
     void deleteByUserId(Long userId);
+    void deleteByUserIdAndConversationId(Long userId, String conversationId);
 }

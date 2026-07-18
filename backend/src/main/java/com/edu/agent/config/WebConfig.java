@@ -1,6 +1,7 @@
 package com.edu.agent.config;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -19,10 +20,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration  // 【Spring Boot】配置类注解，启动时自动加载
 public class WebConfig implements WebMvcConfigurer {  // 【Spring Boot】实现 Spring MVC 配置扩展接口
 
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+    private String allowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {  // 【Spring Boot】Spring MVC 的 CORS 配置入口
         registry.addMapping("/api/**")           // 【Spring Boot】对所有 /api/ 路径启用 CORS
-                .allowedOriginPatterns("*")      // 允许所有来源（开发阶段）
+                .allowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
+                        .map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")  // 允许的 HTTP 方法
                 .allowedHeaders("*")             // 允许所有请求头
                 .allowCredentials(true)          // 允许携带 Cookie/认证信息

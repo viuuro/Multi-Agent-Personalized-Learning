@@ -3,8 +3,21 @@ package com.edu.agent.controller;
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.User;
 import com.edu.agent.service.AuthService;
+import com.edu.agent.service.RequestRateLimiter;
+import com.edu.agent.security.CurrentUser;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -31,10 +44,14 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthService authService;  // 【Spring Boot】构造器注入的认证服务
+    private final RequestRateLimiter rateLimiter;
+    private final HttpSessionSecurityContextRepository securityContextRepository =
+            new HttpSessionSecurityContextRepository();
 
     /** 【Spring Boot】构造器注入 —— Spring 自动解析并注入 AuthService Bean */
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RequestRateLimiter rateLimiter) {
         this.authService = authService;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -46,10 +63,18 @@ public class AuthController {
      * 成功返回 200 + 用户信息，失败返回 401 + 错误原因
      */
     @PostMapping("/login")  // 【Spring Boot】POST 映射
-    public ApiResponse<Map<String, Object>> login(@RequestBody Map<String, String> body) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> login(
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request,
+            HttpServletResponse response) {
         // 【Spring Boot】@RequestBody 将 JSON 请求体自动反序列化为 Map
         String username = body.get("username");
         String password = body.get("password");
+        String rateKey = "login:" + request.getRemoteAddr();
+        if (!rateLimiter.tryAcquire(rateKey, 20, 300)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(ApiResponse.error(429, "登录尝试过于频繁，请稍后再试"));
+        }
         try {
             // 调用 AuthService 验证用户名和密码
             User user = authService.login(username, password);
@@ -59,10 +84,13 @@ public class AuthController {
                     "username", user.getUsername(),
                     "avatar", user.getAvatar() != null ? user.getAvatar() : ""
             );
-            return ApiResponse.success("登录成功", data);
+            establishSession(user, request, response);
+            rateLimiter.clear(rateKey);
+            return ResponseEntity.ok(ApiResponse.success("登录成功", data));
         } catch (RuntimeException e) {
             // 登录失败返回 401 未授权
-            return ApiResponse.error(401, e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(401, "用户名或密码错误"));
         }
     }
 
@@ -75,9 +103,16 @@ public class AuthController {
      * 成功返回 200 + 用户信息，失败返回 400 + 错误原因
      */
     @PostMapping("/register")  // 【Spring Boot】POST 映射
-    public ApiResponse<Map<String, Object>> register(@RequestBody Map<String, String> body) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> register(
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request,
+            HttpServletResponse response) {
         String username = body.get("username");
         String password = body.get("password");
+        if (!rateLimiter.tryAcquire("register:" + request.getRemoteAddr(), 5, 3600)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(ApiResponse.error(429, "注册尝试过于频繁，请稍后再试"));
+        }
         try {
             // 调用 AuthService 创建新用户
             User user = authService.register(username, password);
@@ -86,10 +121,11 @@ public class AuthController {
                     "username", user.getUsername(),
                     "avatar", ""  // 新用户无头像
             );
-            return ApiResponse.success("注册成功", data);
+            establishSession(user, request, response);
+            return ResponseEntity.ok(ApiResponse.success("注册成功", data));
         } catch (RuntimeException e) {
             // 注册失败返回 400 错误请求
-            return ApiResponse.error(400, e.getMessage());
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
         }
     }
 
@@ -102,11 +138,16 @@ public class AuthController {
      * 验证密码后，删除用户及其所有关联数据（对话记录、画像数据）
      */
     @DeleteMapping("/account")  // 【Spring Boot】DELETE 映射
-    public ApiResponse<Void> deleteAccount(@RequestBody Map<String, String> body) {
+    public ApiResponse<Void> deleteAccount(@RequestBody Map<String, String> body,
+                                           Authentication authentication,
+                                           HttpServletRequest request) {
         try {
-            Long userId = Long.parseLong(body.get("userId"));
+            Long userId = CurrentUser.id(authentication);
             String password = body.get("password");
             authService.deleteUser(userId, password);
+            HttpSession session = request.getSession(false);
+            if (session != null) session.invalidate();
+            SecurityContextHolder.clearContext();
             return ApiResponse.success("账号已注销", null);
         } catch (RuntimeException e) {
             return ApiResponse.error(400, e.getMessage());
@@ -122,9 +163,10 @@ public class AuthController {
      * 所有字段均可选，只传需要修改的字段即可
      */
     @PutMapping("/profile")  // 【Spring Boot】PUT 映射（用于更新操作）
-    public ApiResponse<Map<String, Object>> updateProfile(@RequestBody Map<String, String> body) {
+    public ApiResponse<Map<String, Object>> updateProfile(@RequestBody Map<String, String> body,
+                                                          Authentication authentication) {
         try {
-            Long userId = Long.parseLong(body.get("userId"));
+            Long userId = CurrentUser.id(authentication);
             String username = body.get("username");
             String currentPassword = body.get("currentPassword");
             String password = body.get("password");
@@ -140,5 +182,32 @@ public class AuthController {
         } catch (RuntimeException e) {
             return ApiResponse.error(400, e.getMessage());
         }
+    }
+
+    @GetMapping("/me")
+    public ApiResponse<Map<String, Object>> me(Authentication authentication) {
+        User user = authService.getUser(CurrentUser.id(authentication));
+        return ApiResponse.success(Map.of(
+                "id", user.getId(), "username", user.getUsername(),
+                "avatar", user.getAvatar() == null ? "" : user.getAvatar()));
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session != null) session.invalidate();
+        SecurityContextHolder.clearContext();
+        return ApiResponse.success("已退出登录", null);
+    }
+
+    private void establishSession(User user, HttpServletRequest request, HttpServletResponse response) {
+        HttpSession existing = request.getSession(false);
+        if (existing != null) request.changeSessionId();
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                user.getId().toString(), null, java.util.List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, request, response);
     }
 }

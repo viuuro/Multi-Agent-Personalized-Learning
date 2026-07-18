@@ -74,13 +74,47 @@
           <!-- 评分结果显示 -->
           <div v-if="evaluationResult" class="evaluation-result">
             <div class="eval-header">
-              <span class="eval-score">{{ evaluationResult.score }} 分</span>
+              <div>
+                <span class="eval-agent">玛丽的成长档案</span>
+                <div class="eval-score-line">
+                  <span class="eval-score">{{ evaluationResult.score }} 分</span>
+                  <span v-if="evaluationResult.scoreDelta != null" class="eval-delta" :class="{ down: evaluationResult.scoreDelta < 0 }">
+                    {{ evaluationResult.scoreDelta >= 0 ? '+' : '' }}{{ evaluationResult.scoreDelta }}
+                  </span>
+                  <span v-else class="eval-baseline">首次基线</span>
+                </div>
+              </div>
               <button class="eval-close" aria-label="关闭评分结果" @click="evaluationResult = null">
                 <UiIcon name="close" />
               </button>
             </div>
+            <div v-if="evaluationResult.status === 'EVALUATED'" class="eval-dimensions">
+              <div v-for="dimension in evaluationDimensions" :key="dimension.key" class="eval-dimension">
+                <span>{{ dimension.label }}</span>
+                <div class="eval-progress"><i :style="{ width: `${dimension.value}%` }"></i></div>
+                <b>{{ dimension.value }}</b>
+              </div>
+            </div>
             <p class="eval-analysis">{{ evaluationResult.analysis }}</p>
-            <p class="eval-suggestion">{{ evaluationResult.suggestion }}</p>
+            <div v-if="evaluationResult.masteredPoints.length" class="eval-section">
+              <strong>这次真正掌握了</strong>
+              <ul><li v-for="item in evaluationResult.masteredPoints" :key="item">{{ item }}</li></ul>
+            </div>
+            <div v-if="evaluationResult.progressEvidence.length" class="eval-section">
+              <strong>{{ evaluationResult.scoreDelta == null ? '成长起点' : '看得见的进步' }}</strong>
+              <ul><li v-for="item in evaluationResult.progressEvidence" :key="item">{{ item }}</li></ul>
+            </div>
+            <div v-if="evaluationResult.behaviorLinks.length" class="eval-section eval-behavior">
+              <strong>与你过去的学习联动</strong>
+              <ul><li v-for="item in evaluationResult.behaviorLinks" :key="item">{{ item }}</li></ul>
+            </div>
+            <div v-if="evaluationResult.blessingText" class="eval-blessing">
+              <span>“{{ evaluationResult.blessingText }}”</span>
+              <button type="button" :disabled="growthVoiceLoading" @click="playGrowthBlessing">
+                {{ growthVoiceLoading ? '生成语音中…' : '▶ 听玛丽说' }}
+              </button>
+            </div>
+            <p class="eval-suggestion"><b>下一步：</b>{{ evaluationResult.nextChallenge || evaluationResult.suggestion }}</p>
           </div>
         </div>
         </aside>
@@ -199,10 +233,38 @@
           </transition>
           <!-- 隐藏的文件选择器 -->
           <input ref="imageInputRef" type="file" accept="image/*" style="display:none" @change="onImageSelected" />
-          <input ref="fileInputRef" type="file" style="display:none" @change="onFileSelected" />
+          <input ref="fileInputRef" type="file" accept=".pdf,.docx,.txt" style="display:none" @change="onFileSelected" />
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="showSubmissionTaskDialog"
+      title="选择这次要提交的任务"
+      width="560px"
+      align-center
+      :lock-scroll="true"
+      modal-class="plan-expand-overlay"
+    >
+      <p class="submission-task-tip">选择具体任务后，玛丽才能把这次成果和同一任务的上一版准确比较。</p>
+      <div class="submission-task-list">
+        <button
+          v-for="task in submissionTaskOptions"
+          :key="task.key"
+          type="button"
+          class="submission-task-option"
+          :class="{ selected: selectedSubmissionTaskKey === task.key }"
+          @click="selectedSubmissionTaskKey = task.key"
+        >
+          <span>第 {{ task.weekNumber }} 周 · {{ task.topic }}</span>
+          <strong>{{ task.title }}</strong>
+        </button>
+      </div>
+      <template #footer>
+        <el-button @click="showSubmissionTaskDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!selectedSubmissionTask" @click="confirmSubmissionTask">选择成果文件</el-button>
+      </template>
+    </el-dialog>
 
     <!-- ==================== 展开模态框 ==================== -->
     <el-dialog
@@ -242,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useAuthStore } from '../stores/authStore'
@@ -298,34 +360,121 @@ const stagedFile = ref<{ file: File; name: string; size: string } | null>(null)
 
 // ===== 文件提交 & AI 评分 =====
 const submitting = ref(false)
-const evaluationResult = ref<{ score: number; analysis: string; suggestion: string } | null>(null)
+interface GrowthResult {
+  status: SubmissionDetail['status']
+  score: number
+  scoreDelta: number | null
+  analysis: string
+  suggestion: string
+  masteredPoints: string[]
+  progressEvidence: string[]
+  behaviorLinks: string[]
+  dimensions: Record<string, number>
+  nextChallenge: string
+  blessingText: string
+}
+
+interface SubmissionTaskOption {
+  key: string
+  weekNumber: number
+  taskIndex: number
+  topic: string
+  title: string
+}
+
+const evaluationResult = ref<GrowthResult | null>(null)
+const showSubmissionTaskDialog = ref(false)
+const selectedSubmissionTaskKey = ref('')
+const growthVoiceLoading = ref(false)
+let growthAudio: HTMLAudioElement | null = null
+let growthAudioUrl = ''
+
+const submissionTaskOptions = computed<SubmissionTaskOption[]>(() => {
+  const plan = planCardRef.value?.plan as LearningPlan | null | undefined
+  return (plan?.weeks || []).flatMap(week => (week.tasks || []).map((title, taskIndex) => ({
+    key: `${week.weekNumber}-${taskIndex}`,
+    weekNumber: week.weekNumber,
+    taskIndex,
+    topic: week.topic,
+    title,
+  })))
+})
+
+const selectedSubmissionTask = computed(() =>
+  submissionTaskOptions.value.find(task => task.key === selectedSubmissionTaskKey.value) || null)
+
+const evaluationDimensions = computed(() => {
+  const labels: Record<string, string> = {
+    completion: '完成度', accuracy: '准确性', depth: '理解深度',
+    practice: '实践性', expression: '表达',
+  }
+  return Object.entries(labels).map(([key, label]) => ({
+    key,
+    label,
+    value: Math.max(0, Math.min(100, Number(evaluationResult.value?.dimensions[key] || 0))),
+  }))
+})
+
+function parseJsonArray(value?: string): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+function parseJsonObject(value?: string): Record<string, number> {
+  if (!value) return {}
+  try {
+    const parsed = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).map(([key, score]) => [key, Number(score) || 0]))
+  } catch {
+    return {}
+  }
+}
+
+function transientGrowthResult(analysis: string, suggestion: string): GrowthResult {
+  return {
+    status: 'ERROR', score: 0, scoreDelta: null, analysis, suggestion,
+    masteredPoints: [], progressEvidence: [], behaviorLinks: [], dimensions: {},
+    nextChallenge: suggestion, blessingText: '',
+  }
+}
 
 function applySubmissionResult(detail?: SubmissionDetail) {
+  clearGrowthVoice()
   if (!detail) {
     evaluationResult.value = null
     return
   }
   if (detail.status === 'EVALUATED' && detail.evaluation) {
+    const evaluation = detail.evaluation
     evaluationResult.value = {
-      score: detail.evaluation.score,
-      analysis: detail.evaluation.analysis,
-      suggestion: detail.evaluation.suggestion,
+      status: detail.status,
+      score: evaluation.score,
+      scoreDelta: evaluation.scoreDelta ?? null,
+      analysis: evaluation.analysis,
+      suggestion: evaluation.suggestion,
+      masteredPoints: parseJsonArray(evaluation.masteredPointsJson),
+      progressEvidence: parseJsonArray(evaluation.progressEvidenceJson),
+      behaviorLinks: parseJsonArray(evaluation.behaviorLinksJson),
+      dimensions: parseJsonObject(evaluation.dimensionsJson),
+      nextChallenge: evaluation.nextChallenge || '',
+      blessingText: evaluation.blessingText || '',
     }
     return
   }
   if (detail.status === 'ERROR') {
-    evaluationResult.value = {
-      score: 0,
-      analysis: detail.errorMessage || 'AI 评分失败',
-      suggestion: '请检查学习成果内容后重新提交。',
-    }
+    evaluationResult.value = transientGrowthResult(
+      detail.errorMessage || 'AI 评分失败', '请检查学习成果内容后重新提交。')
     return
   }
-  evaluationResult.value = {
-    score: 0,
-    analysis: 'AI 正在评分中，结果会自动保存。',
-    suggestion: '稍后重新打开当前对话即可查看评分结果。',
-  }
+  evaluationResult.value = transientGrowthResult(
+    '玛丽正在整理这次成长档案，结果会自动保存。', '稍后重新打开当前对话即可查看。')
+  evaluationResult.value.status = detail.status
 }
 
 function getGreeting(): string {
@@ -385,7 +534,8 @@ async function handleSend() {
         purpose: 'CHAT',
       })
       window.dispatchEvent(new Event('file-history-updated'))
-      const fileContent = result.text || '（文件内容为空）'
+      if (!result.text?.trim()) throw new Error('文件中没有可提取的文本')
+      const fileContent = result.text
       const msgContent = text || `请分析这个文件：${stagedFile.value!.name}`
       const displayContent = `${msgContent}\n\n📄 文件：${stagedFile.value!.name}`
       const fullMessage = `${msgContent}\n\n---\n📄 文件：${stagedFile.value!.name}\n\n${fileContent}\n---`
@@ -505,6 +655,19 @@ function clearStagedFile() {
 // ===== AI 评分文件提交 =====
 
 async function handleSubmissionUpload() {
+  if (!submissionTaskOptions.value.length) {
+    alert('当前学习计划里还没有可提交的具体任务')
+    return
+  }
+  if (!selectedSubmissionTask.value) {
+    selectedSubmissionTaskKey.value = submissionTaskOptions.value[0].key
+  }
+  showSubmissionTaskDialog.value = true
+}
+
+function confirmSubmissionTask() {
+  if (!selectedSubmissionTask.value) return
+  showSubmissionTaskDialog.value = false
   fileInputRef.value?.setAttribute('data-mode', 'submit')
   fileInputRef.value?.click()
 }
@@ -527,17 +690,23 @@ async function handleSubmissionFileSelected(e: Event) {
       purpose: 'SUBMISSION',
     })
     window.dispatchEvent(new Event('file-history-updated'))
-    const fileContent = result.text || '（文件内容为空）'
+    if (!result.text?.trim()) throw new Error('文件中没有可提取的文本')
+    const fileContent = result.text
     const userId = authStore.user?.id
     if (!userId) { alert('请先登录'); return }
+    const target = selectedSubmissionTask.value
+    if (!target) throw new Error('请选择要提交的具体学习任务')
 
     // 2. 调用 AI 提交评分接口
     const submissionId = await submitLearningResultApi(
-      userId, conversationId, file, fileContent)
+      userId, conversationId, file, fileContent, {
+        weekNumber: target.weekNumber,
+        taskIndex: target.taskIndex,
+      })
     window.dispatchEvent(new Event('learning-activity-updated'))
 
     // 3. 轮询获取 AI 评分结果
-    let retries = 35
+    let retries = 70
     while (retries > 0) {
       await new Promise(r => setTimeout(r, 2000))
       const detail = await fetchSubmissionApi(userId, submissionId)
@@ -553,10 +722,12 @@ async function handleSubmissionFileSelected(e: Event) {
       retries--
     }
     if (!evaluationResult.value) {
-      evaluationResult.value = { score: 0, analysis: 'AI 评分超时，请稍后重试', suggestion: 'AI Mock 模式返回固定评分，或检查 API Key 配置' }
+      evaluationResult.value = transientGrowthResult(
+        'AI 评分超时，请稍后重试', '请稍后重新打开当前对话，或检查 MiMo API 配置。')
     }
   } catch (err: unknown) {
-    evaluationResult.value = { score: 0, analysis: '提交失败: ' + (err instanceof Error ? err.message : '未知错误'), suggestion: '请检查文件格式并重试' }
+    evaluationResult.value = transientGrowthResult(
+      '提交失败: ' + (err instanceof Error ? err.message : '未知错误'), '请检查文件格式并重试。')
   } finally {
     submitting.value = false
     ;(e.target as HTMLInputElement).value = ''
@@ -611,6 +782,39 @@ function clearWelcomeVoice() {
   if (welcomeAudioUrl) {
     URL.revokeObjectURL(welcomeAudioUrl)
     welcomeAudioUrl = ''
+  }
+}
+
+function clearGrowthVoice() {
+  growthAudio?.pause()
+  growthAudio = null
+  growthVoiceLoading.value = false
+  if (growthAudioUrl) {
+    URL.revokeObjectURL(growthAudioUrl)
+    growthAudioUrl = ''
+  }
+}
+
+async function playGrowthBlessing() {
+  const text = evaluationResult.value?.blessingText
+  if (!text || growthVoiceLoading.value) return
+  if (growthAudio) {
+    growthAudio.currentTime = 0
+    await growthAudio.play().catch(() => undefined)
+    return
+  }
+  growthVoiceLoading.value = true
+  try {
+    const style = '角色名叫玛丽，是一名温柔含蓄、长期陪伴用户学习的少女。声音轻柔平缓、连贯自然，带着发自内心的关怀和一点羞怯，咬字清晰，富有细腻感情顿挫，但不要活泼跳跃、夸张撒娇或带宗教仪式腔。'
+    const blob = await fetchWelcomeVoice(authStore.user?.username || '', text, style)
+    if (!blob.size) return
+    growthAudioUrl = URL.createObjectURL(blob)
+    growthAudio = new Audio(growthAudioUrl)
+    await growthAudio.play()
+  } catch (error) {
+    console.warn('玛丽成长祝福语音生成失败:', error)
+  } finally {
+    growthVoiceLoading.value = false
   }
 }
 
@@ -767,6 +971,7 @@ async function loadConversationWorkspace(conversationId: string) {
   profileStore.resetProfile()
   planHasData.value = false
   planCardRef.value?.setPlan(null)
+  clearGrowthVoice()
   evaluationResult.value = null
 
   try {
@@ -809,6 +1014,7 @@ function handleNewConversation(event: Event) {
   profileStore.resetProfile()
   planHasData.value = false
   planCardRef.value?.setPlan(null)
+  clearGrowthVoice()
   evaluationResult.value = null
   streamGreeting(getGreeting())
 }
@@ -816,6 +1022,7 @@ function handleNewConversation(event: Event) {
 function handleConversationSelected(event: Event) {
   const conversationId = (event as CustomEvent<{ conversationId: string }>).detail?.conversationId
   if (!conversationId) return
+  clearGrowthVoice()
   evaluationResult.value = null
   void loadConversationWorkspace(conversationId)
 }
@@ -853,6 +1060,7 @@ onUnmounted(() => {
   if (scrollTimer) clearTimeout(scrollTimer)
   if (titleAnalysisTimer) clearTimeout(titleAnalysisTimer)
   clearWelcomeVoice()
+  clearGrowthVoice()
 })
 
 watch(sidebarOpen, value => {
@@ -961,12 +1169,30 @@ watch(sidebarOpen, value => {
   animation: evalFadeIn 0.3s ease;
 }
 .eval-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.eval-agent { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.eval-score-line { display: flex; align-items: baseline; gap: 8px; }
 .eval-score { font-size: 22px; font-weight: 700; color: var(--accent); }
+.eval-delta { font-size: 13px; font-weight: 700; color: #43a66d; }
+.eval-delta.down { color: #c46d6d; }
+.eval-baseline { font-size: 11px; color: var(--text-faint); background: var(--bg-input); padding: 2px 7px; border-radius: 999px; }
 .eval-close { width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--text-faint); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .eval-close:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .eval-close .ui-icon { width: 16px; height: 16px; }
 .eval-analysis { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 8px; }
 .eval-suggestion { font-size: 13px; color: var(--accent); line-height: 1.6; background: var(--accent-hover); padding: 10px 14px; border-radius: 10px; margin: 0; }
+.eval-dimensions { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 12px; }
+.eval-dimension { display: grid; grid-template-columns: 54px minmax(40px, 1fr) 24px; gap: 7px; align-items: center; font-size: 11px; color: var(--text-muted); }
+.eval-dimension b { color: var(--text-secondary); font-weight: 600; text-align: right; }
+.eval-progress { height: 6px; background: var(--bg-input); border-radius: 999px; overflow: hidden; }
+.eval-progress i { display: block; height: 100%; background: linear-gradient(90deg, #d4916f, #b87858); border-radius: inherit; transition: width .4s ease; }
+.eval-section { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border-solid); border-radius: 10px; }
+.eval-section strong { font-size: 12px; color: var(--text-secondary); }
+.eval-section ul { margin: 6px 0 0; padding-left: 17px; }
+.eval-section li { margin: 3px 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.eval-behavior { background: var(--bg-input); }
+.eval-blessing { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; padding: 12px; border-radius: 12px; background: linear-gradient(135deg, var(--accent-hover), var(--bg-card)); color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.eval-blessing button { align-self: flex-start; padding: 5px 9px; border: 1px solid var(--border-solid); border-radius: 8px; background: var(--bg-card); color: var(--accent); cursor: pointer; }
+.eval-blessing button:disabled { opacity: .55; cursor: wait; }
 
 @keyframes evalFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -1447,4 +1673,10 @@ watch(sidebarOpen, value => {
 .edit-modal-footer .el-button { border-radius: 8px !important; }
 .edit-modal-footer .el-button:last-child { margin-right: 4px; background: var(--bg-input) !important; border-color: var(--border-solid) !important; color: var(--text-muted) !important; }
 .edit-modal-footer .el-button:last-child:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: transparent !important; }
+.submission-task-tip { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.submission-task-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+.submission-task-option { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 11px 13px; border: 1px solid var(--border-solid); border-radius: 12px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; text-align: left; }
+.submission-task-option span { color: var(--text-faint); font-size: 11px; }
+.submission-task-option strong { font-size: 13px; line-height: 1.5; font-weight: 600; }
+.submission-task-option:hover, .submission-task-option.selected { border-color: var(--accent); background: var(--accent-hover); }
 </style>

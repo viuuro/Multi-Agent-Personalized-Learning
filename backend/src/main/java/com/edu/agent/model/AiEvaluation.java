@@ -37,7 +37,8 @@ import java.time.LocalDateTime;
  *     evaluation_time DATETIME                           — 评价时间
  */
 @Entity  // 【Spring Boot/JPA】声明为 JPA 实体 → Hibernate 映射到数据库表
-@Table(name = "ai_evaluation")  // 【Spring Boot/JPA】指定映射的 MySQL 表名
+@Table(name = "ai_evaluation", uniqueConstraints = @UniqueConstraint(
+        name = "uk_evaluation_submission", columnNames = "submission_id"))
 public class AiEvaluation {
 
     /** 主键，自增 ID */
@@ -66,6 +67,36 @@ public class AiEvaluation {
 
     @Column(name = "recommended_actions_json", columnDefinition = "TEXT")
     private String recommendedActionsJson;
+
+    @Column(name = "dimensions_json", columnDefinition = "TEXT")
+    private String dimensionsJson;
+
+    @Column(name = "strengths_json", columnDefinition = "TEXT")
+    private String strengthsJson;
+
+    @Column(name = "mastered_points_json", columnDefinition = "TEXT")
+    private String masteredPointsJson;
+
+    @Column(name = "progress_evidence_json", columnDefinition = "TEXT")
+    private String progressEvidenceJson;
+
+    @Column(name = "behavior_links_json", columnDefinition = "TEXT")
+    private String behaviorLinksJson;
+
+    @Column(name = "growth_outcome", length = 30)
+    private String growthOutcome;
+
+    @Column(name = "previous_score")
+    private Integer previousScore;
+
+    @Column(name = "score_delta")
+    private Integer scoreDelta;
+
+    @Column(name = "next_challenge", length = 1000)
+    private String nextChallenge;
+
+    @Column(name = "blessing_text", length = 1000)
+    private String blessingText;
 
     /** 评价时间，由 @PrePersist 自动设置 */
     @Column(name = "evaluation_time")
@@ -102,6 +133,27 @@ public class AiEvaluation {
 
     public String getRecommendedActionsJson() { return recommendedActionsJson; }
     public void setRecommendedActionsJson(String recommendedActionsJson) { this.recommendedActionsJson = recommendedActionsJson; }
+
+    public String getDimensionsJson() { return dimensionsJson; }
+    public void setDimensionsJson(String dimensionsJson) { this.dimensionsJson = dimensionsJson; }
+    public String getStrengthsJson() { return strengthsJson; }
+    public void setStrengthsJson(String strengthsJson) { this.strengthsJson = strengthsJson; }
+    public String getMasteredPointsJson() { return masteredPointsJson; }
+    public void setMasteredPointsJson(String masteredPointsJson) { this.masteredPointsJson = masteredPointsJson; }
+    public String getProgressEvidenceJson() { return progressEvidenceJson; }
+    public void setProgressEvidenceJson(String progressEvidenceJson) { this.progressEvidenceJson = progressEvidenceJson; }
+    public String getBehaviorLinksJson() { return behaviorLinksJson; }
+    public void setBehaviorLinksJson(String behaviorLinksJson) { this.behaviorLinksJson = behaviorLinksJson; }
+    public String getGrowthOutcome() { return growthOutcome; }
+    public void setGrowthOutcome(String growthOutcome) { this.growthOutcome = growthOutcome; }
+    public Integer getPreviousScore() { return previousScore; }
+    public void setPreviousScore(Integer previousScore) { this.previousScore = previousScore; }
+    public Integer getScoreDelta() { return scoreDelta; }
+    public void setScoreDelta(Integer scoreDelta) { this.scoreDelta = scoreDelta; }
+    public String getNextChallenge() { return nextChallenge; }
+    public void setNextChallenge(String nextChallenge) { this.nextChallenge = nextChallenge; }
+    public String getBlessingText() { return blessingText; }
+    public void setBlessingText(String blessingText) { this.blessingText = blessingText; }
 
     public LocalDateTime getEvaluationTime() { return evaluationTime; }
     public void setEvaluationTime(LocalDateTime evaluationTime) { this.evaluationTime = evaluationTime; }

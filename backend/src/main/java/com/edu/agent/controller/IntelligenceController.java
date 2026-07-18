@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.edu.agent.security.CurrentUser;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -38,7 +40,9 @@ public class IntelligenceController {
     @GetMapping
     public ApiResponse<Map<String, Object>> getIntelligenceState(
             @PathVariable String conversationId,
-            @RequestParam Long userId) {
+            @RequestParam(required = false) Long userId,
+            Authentication authentication) {
+        userId = CurrentUser.id(authentication);
         Map<String, Object> data = new LinkedHashMap<>();
         ConversationSession session = sessionService.findSession(userId, conversationId).orElse(null);
         data.put("memorySummary", session == null ? "" : session.getMemorySummary());

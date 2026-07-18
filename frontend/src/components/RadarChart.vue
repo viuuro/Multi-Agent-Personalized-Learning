@@ -92,7 +92,7 @@ function renderChart(values: RadarValues) {
       renderMode: 'html',
       appendTo: 'body',
       confine: false,
-      position: (point: [number, number], params, dom) => {
+      position: (point, _params, dom) => {
         const tooltipWidth = dom instanceof HTMLElement ? dom.offsetWidth : 100
         return [point[0] - tooltipWidth - 10, point[1] - 10]
       },

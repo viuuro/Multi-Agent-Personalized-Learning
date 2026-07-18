@@ -6,10 +6,13 @@ import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.repository.LearningPlanRepository;
 import com.edu.agent.service.AgentOrchestrationService;
 import com.edu.agent.service.LearningPlanVersionService;
+import com.edu.agent.service.RequestRateLimiter;
+import com.edu.agent.security.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 import java.util.Map;
 import java.util.Optional;
@@ -31,20 +34,27 @@ public class PlanController {
     private final AgentOrchestrationService orchestrationService;
     private final LearningPlanRepository planRepository;
     private final LearningPlanVersionService planVersionService;
+    private final RequestRateLimiter rateLimiter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PlanController(AgentOrchestrationService orchestrationService,
                           LearningPlanRepository planRepository,
-                          LearningPlanVersionService planVersionService) {
+                          LearningPlanVersionService planVersionService,
+                          RequestRateLimiter rateLimiter) {
         this.orchestrationService = orchestrationService;
         this.planRepository = planRepository;
         this.planVersionService = planVersionService;
+        this.rateLimiter = rateLimiter;
     }
 
     /** 生成计划并持久化 */
     @PostMapping("/plan")
-    public ApiResponse<LearningPlan> generatePlan(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public ApiResponse<LearningPlan> generatePlan(@RequestBody Map<String, Object> body,
+                                                   Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (!rateLimiter.tryAcquire("plan:" + userId, 5, 60)) {
+            return ApiResponse.error(429, "计划生成过于频繁，请稍后再试");
+        }
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
         if (conversationId.isBlank()) {
             return ApiResponse.error(400, "缺少 conversationId");
@@ -77,8 +87,10 @@ public class PlanController {
 
     /** 读取用户最近一次计划 */
     @GetMapping("/plan")
-    public ApiResponse<LearningPlan> getPlan(@RequestParam Long userId,
+    public ApiResponse<LearningPlan> getPlan(@RequestParam(required = false) Long userId,
+                                             Authentication authentication,
                                              @RequestParam String conversationId) {
+        userId = CurrentUser.id(authentication);
         Optional<LearningPlanEntity> entity = planRepository
                 .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId);
         if (entity.isPresent()) {
@@ -94,8 +106,9 @@ public class PlanController {
 
     /** 保存用户编辑后的计划 */
     @PutMapping("/plan")
-    public ApiResponse<LearningPlan> savePlan(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public ApiResponse<LearningPlan> savePlan(@RequestBody Map<String, Object> body,
+                                              Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
         @SuppressWarnings("unchecked")
         Map<String, Object> planData = (Map<String, Object>) body.get("plan");
@@ -119,8 +132,10 @@ public class PlanController {
     /** 获取对话内计划版本历史，便于回溯智能调整。 */
     @GetMapping("/plan/history")
     public ApiResponse<List<LearningPlanEntity>> getPlanHistory(
-            @RequestParam Long userId,
+            @RequestParam(required = false) Long userId,
+            Authentication authentication,
             @RequestParam String conversationId) {
+        userId = CurrentUser.id(authentication);
         return ApiResponse.success("ok", planVersionService.getHistory(userId, conversationId));
     }
 }

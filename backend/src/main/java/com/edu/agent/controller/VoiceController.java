@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.edu.agent.security.CurrentUser;
+import com.edu.agent.service.RequestRateLimiter;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -33,12 +36,14 @@ public class VoiceController {
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final RequestRateLimiter rateLimiter;
 
     @Value("${python.ai.url:http://localhost:8000}")
     private String pythonAiUrl;
 
-    public VoiceController(ObjectMapper objectMapper) {
+    public VoiceController(ObjectMapper objectMapper, RequestRateLimiter rateLimiter) {
         this.objectMapper = objectMapper;
+        this.rateLimiter = rateLimiter;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -46,7 +51,12 @@ public class VoiceController {
 
     /** POST /api/voice/welcome - create one non-cached voice-cloned welcome message. */
     @PostMapping(value = "/welcome", produces = "audio/wav")
-    public ResponseEntity<byte[]> welcome(@RequestBody(required = false) Map<String, String> body) {
+    public ResponseEntity<byte[]> welcome(@RequestBody(required = false) Map<String, String> body,
+                                          Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (!rateLimiter.tryAcquire("voice:" + userId, 10, 60)) {
+            return ResponseEntity.status(429).build();
+        }
         String username = body == null ? "" : body.getOrDefault("username", "");
         String text = body == null ? "" : body.getOrDefault("text", "");
         String style = body == null ? "" : body.getOrDefault("style", "");

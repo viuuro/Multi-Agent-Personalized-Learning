@@ -7,6 +7,13 @@
 # 【Spring Boot】内嵌 Tomcat 服务器端口配置
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:false}
+      timeout: 8h
 
 # 【Spring Boot】数据源 + JPA 自动配置（spring-boot-starter-data-jpa）
 # 默认使用 H2 文件数据库，数据写入 backend/data，重启不会丢失。
@@ -15,11 +22,11 @@ spring:
   datasource:                                       # 【Spring Boot】DataSource 自动配置
     url: ${DB_URL:jdbc:h2:file:./data/edu_agent;MODE=MYSQL;AUTO_SERVER=TRUE}
     username: ${DB_USER:sa}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:local-dev-only-change-me}
     driver-class-name: ${DB_DRIVER:org.h2.Driver}
   h2:                                               # 【Spring Boot】H2 Console 配置
     console:
-      enabled: true                                 # 启用 H2 Web Console（访问 http://localhost:8080/h2-console）
+      enabled: false                                # 默认关闭；仅 dev profile 可显式启用
       path: /h2-console                             # H2 Console 路径
   jpa:                                              # 【Spring Boot】JPA/Hibernate 自动配置
     hibernate:
@@ -28,6 +35,10 @@ spring:
     # MySQL 示例：
     # DB_URL=jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     # DB_USER=root  DB_PASSWORD=123456  DB_DRIVER=com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
 
 # -----------------------------------------------------------
 # Python AI 服务地址
@@ -41,3 +52,7 @@ python:
 # -----------------------------------------------------------
 ai:
   mock-enabled: ${AI_MOCK_ENABLED:false}
+
+app:
+  cors:
+    allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

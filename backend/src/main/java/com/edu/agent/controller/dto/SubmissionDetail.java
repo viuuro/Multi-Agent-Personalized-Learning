@@ -54,6 +54,15 @@ public class SubmissionDetail {
 
     private Long fileSize;
 
+    private Integer versionNumber;
+
+    private Long previousSubmissionId;
+
+    private Long comparisonSubmissionId;
+
+    /** 陪伴用户查看成长反馈的智能体名称。 */
+    private String agentName = "玛丽";
+
     /** 提交的成果内容 */
     private String content;
 
@@ -84,6 +93,9 @@ public class SubmissionDetail {
         dto.setConversationId(submission.getConversationId());
         dto.setFileName(submission.getFileName());
         dto.setFileSize(submission.getFileSize());
+        dto.setVersionNumber(submission.getVersionNumber());
+        dto.setPreviousSubmissionId(submission.getPreviousSubmissionId());
+        dto.setComparisonSubmissionId(submission.getComparisonSubmissionId());
         dto.setContent(submission.getContent());
         dto.setSubmissionTime(submission.getSubmissionTime());
         dto.setStatus(submission.getStatus());
@@ -96,6 +108,16 @@ public class SubmissionDetail {
             evalDto.setSuggestion(evaluation.getSuggestion());
             evalDto.setWeaknessesJson(evaluation.getWeaknessesJson());
             evalDto.setRecommendedActionsJson(evaluation.getRecommendedActionsJson());
+            evalDto.setDimensionsJson(evaluation.getDimensionsJson());
+            evalDto.setStrengthsJson(evaluation.getStrengthsJson());
+            evalDto.setMasteredPointsJson(evaluation.getMasteredPointsJson());
+            evalDto.setProgressEvidenceJson(evaluation.getProgressEvidenceJson());
+            evalDto.setBehaviorLinksJson(evaluation.getBehaviorLinksJson());
+            evalDto.setGrowthOutcome(evaluation.getGrowthOutcome());
+            evalDto.setPreviousScore(evaluation.getPreviousScore());
+            evalDto.setScoreDelta(evaluation.getScoreDelta());
+            evalDto.setNextChallenge(evaluation.getNextChallenge());
+            evalDto.setBlessingText(evaluation.getBlessingText());
             evalDto.setEvaluationTime(evaluation.getEvaluationTime());
             dto.setEvaluation(evalDto);
         }
@@ -121,6 +143,14 @@ public class SubmissionDetail {
 
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+    public Integer getVersionNumber() { return versionNumber; }
+    public void setVersionNumber(Integer versionNumber) { this.versionNumber = versionNumber; }
+    public Long getPreviousSubmissionId() { return previousSubmissionId; }
+    public void setPreviousSubmissionId(Long previousSubmissionId) { this.previousSubmissionId = previousSubmissionId; }
+    public Long getComparisonSubmissionId() { return comparisonSubmissionId; }
+    public void setComparisonSubmissionId(Long comparisonSubmissionId) { this.comparisonSubmissionId = comparisonSubmissionId; }
+    public String getAgentName() { return agentName; }
+    public void setAgentName(String agentName) { this.agentName = agentName; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
@@ -157,6 +187,16 @@ public class SubmissionDetail {
         private String suggestion;
         private String weaknessesJson;
         private String recommendedActionsJson;
+        private String dimensionsJson;
+        private String strengthsJson;
+        private String masteredPointsJson;
+        private String progressEvidenceJson;
+        private String behaviorLinksJson;
+        private String growthOutcome;
+        private Integer previousScore;
+        private Integer scoreDelta;
+        private String nextChallenge;
+        private String blessingText;
         /** AI 评价完成时间 */
         private LocalDateTime evaluationTime;
 
@@ -176,6 +216,26 @@ public class SubmissionDetail {
         public void setWeaknessesJson(String weaknessesJson) { this.weaknessesJson = weaknessesJson; }
         public String getRecommendedActionsJson() { return recommendedActionsJson; }
         public void setRecommendedActionsJson(String recommendedActionsJson) { this.recommendedActionsJson = recommendedActionsJson; }
+        public String getDimensionsJson() { return dimensionsJson; }
+        public void setDimensionsJson(String dimensionsJson) { this.dimensionsJson = dimensionsJson; }
+        public String getStrengthsJson() { return strengthsJson; }
+        public void setStrengthsJson(String strengthsJson) { this.strengthsJson = strengthsJson; }
+        public String getMasteredPointsJson() { return masteredPointsJson; }
+        public void setMasteredPointsJson(String masteredPointsJson) { this.masteredPointsJson = masteredPointsJson; }
+        public String getProgressEvidenceJson() { return progressEvidenceJson; }
+        public void setProgressEvidenceJson(String progressEvidenceJson) { this.progressEvidenceJson = progressEvidenceJson; }
+        public String getBehaviorLinksJson() { return behaviorLinksJson; }
+        public void setBehaviorLinksJson(String behaviorLinksJson) { this.behaviorLinksJson = behaviorLinksJson; }
+        public String getGrowthOutcome() { return growthOutcome; }
+        public void setGrowthOutcome(String growthOutcome) { this.growthOutcome = growthOutcome; }
+        public Integer getPreviousScore() { return previousScore; }
+        public void setPreviousScore(Integer previousScore) { this.previousScore = previousScore; }
+        public Integer getScoreDelta() { return scoreDelta; }
+        public void setScoreDelta(Integer scoreDelta) { this.scoreDelta = scoreDelta; }
+        public String getNextChallenge() { return nextChallenge; }
+        public void setNextChallenge(String nextChallenge) { this.nextChallenge = nextChallenge; }
+        public String getBlessingText() { return blessingText; }
+        public void setBlessingText(String blessingText) { this.blessingText = blessingText; }
 
         public LocalDateTime getEvaluationTime() { return evaluationTime; }
         public void setEvaluationTime(LocalDateTime evaluationTime) { this.evaluationTime = evaluationTime; }

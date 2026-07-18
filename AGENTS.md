@@ -1,7 +1,7 @@
 # 项目：个性化学习多智能体系统 (Personalized Learning Multi-Agent System)
 
 ## 技术栈
-- **后端**: Spring Boot 3.2 + Java 17 + Maven + MySQL 8.0 + JDBC
+- **后端**: Spring Boot 3.5.16 + Java 17 + Maven + MySQL 8.0 + JDBC
 - **AI 服务**: Python 3.12 + FastAPI + LangChain + MiMo-v2.5 API
 - **前端**: Vue 3 + TypeScript + Vite + Pinia + Element Plus + ECharts + Markdown-it
 - **AI 模型**: 仅使用 MiMo-v2.5 API（兼容 OpenAI 接口格式）
@@ -170,9 +170,8 @@ python:
 ```txt
 fastapi==0.115.0
 uvicorn==0.30.6
-langchain==0.3.7
-langchain-openai==0.2.9
-langchain-core==0.3.21
+langchain-openai==1.3.5
+langchain-core==1.4.9
 ```
 
 ## 前端详细要求

@@ -30,7 +30,7 @@ import type { LearningPlan } from './api'
 export function sendMessage(
   message: string,
   imageData?: string,
-  userId?: number,
+  _userId?: number,
   metadata?: { displayMessage?: string; attachmentName?: string; attachmentType?: 'image' | 'file' }
 ) {
   const chatStore = useChatStore()
@@ -41,6 +41,7 @@ export function sendMessage(
 
   fetch('/api/chat', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message,
@@ -48,8 +49,7 @@ export function sendMessage(
       conversationId: chatStore.conversationId || undefined,
       // 图片 Base64 数据（可选）
       imageData: imageData || undefined,
-      // 用户 ID，用于画像按用户隔离
-      userId: userId || undefined,
+      // 身份由服务器 Session 确认；保留参数只为兼容现有调用签名。
       displayMessage: metadata?.displayMessage || message,
       attachmentName: metadata?.attachmentName,
       attachmentType: metadata?.attachmentType,

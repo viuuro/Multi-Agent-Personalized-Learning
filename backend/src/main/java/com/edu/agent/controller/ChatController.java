@@ -6,11 +6,14 @@ import com.edu.agent.model.Conversation;
 import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.service.ChatService;
 import com.edu.agent.service.ConversationSessionService;
+import com.edu.agent.service.RequestRateLimiter;
+import com.edu.agent.security.CurrentUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.security.core.Authentication;
 
 import java.util.Collections;
 import java.util.List;
@@ -40,14 +43,17 @@ public class ChatController {
     private final ChatService chatService;
     private final ConversationRepository conversationRepository;
     private final ConversationSessionService conversationSessionService;
+    private final RequestRateLimiter rateLimiter;
 
     /** 【Spring Boot】构造器注入 */
     public ChatController(ChatService chatService,
                           ConversationRepository conversationRepository,
-                          ConversationSessionService conversationSessionService) {
+                          ConversationSessionService conversationSessionService,
+                          RequestRateLimiter rateLimiter) {
         this.chatService = chatService;
         this.conversationRepository = conversationRepository;
         this.conversationSessionService = conversationSessionService;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -63,7 +69,20 @@ public class ChatController {
      * produces = TEXT_EVENT_STREAM_VALUE 声明响应为 SSE 格式
      */
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)  // 【Spring Boot】POST 映射 + SSE 流式响应
-    public SseEmitter chat(@RequestBody ChatMessage chatMessage) {  // 【Spring Boot】@RequestBody: JSON → Java 对象；SseEmitter: SSE 长连接
+    public SseEmitter chat(@RequestBody ChatMessage chatMessage, Authentication authentication) {
+        Long userId = CurrentUser.id(authentication);
+        if (chatMessage.getMessage() != null && chatMessage.getMessage().length() > 20_000) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE, "消息内容过长");
+        }
+        if (chatMessage.getImageData() != null && chatMessage.getImageData().length() > 8 * 1024 * 1024) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE, "图片不能超过约 6MB");
+        }
+        if (!rateLimiter.tryAcquire("chat:" + userId, 30, 60)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "对话请求过于频繁");
+        }
         String imageData = chatMessage.getImageData();
         boolean hasImage = imageData != null && !imageData.isEmpty();
         int imageLen = hasImage ? imageData.length() : 0;
@@ -79,7 +98,7 @@ public class ChatController {
                 imageData,
                 chatMessage.getAttachmentName(),
                 chatMessage.getAttachmentType(),
-                chatMessage.getUserId());
+                userId);
     }
 
     /**
@@ -98,8 +117,10 @@ public class ChatController {
      * 登录后加载历史消息，恢复聊天上下文
      */
     @GetMapping("/conversations")
-    public ApiResponse<List<Conversation>> getConversations(@RequestParam Long userId,
+    public ApiResponse<List<Conversation>> getConversations(@RequestParam(required = false) Long userId,
+                                                            Authentication authentication,
                                                             @RequestParam(defaultValue = "50") int limit) {
+        userId = CurrentUser.id(authentication);
         int safeLimit = Math.max(1, Math.min(limit, 1000));
         List<Conversation> messages = conversationRepository.findLatestByUserId(userId, safeLimit);
         // 数据库按倒序查的，反转为时间正序给前端
@@ -113,13 +134,12 @@ public class ChatController {
     /** POST /api/conversations/title —— 基于当前会话的整体内容生成简短标题。 */
     @PostMapping("/conversations/title")
     public ApiResponse<Map<String, String>> generateConversationTitle(
-            @RequestBody Map<String, Object> body) {
-        Object userIdValue = body.get("userId");
+            @RequestBody Map<String, Object> body, Authentication authentication) {
         String conversationId = String.valueOf(body.getOrDefault("conversationId", "")).trim();
-        if (userIdValue == null || conversationId.isBlank()) {
-            return ApiResponse.error(400, "缺少 userId 或 conversationId");
+        if (conversationId.isBlank()) {
+            return ApiResponse.error(400, "缺少 conversationId");
         }
-        Long userId = Long.valueOf(userIdValue.toString());
+        Long userId = CurrentUser.id(authentication);
         String context = String.valueOf(body.getOrDefault("conversationContext", ""));
         String title = chatService.generateConversationTitle(context);
         title = conversationSessionService.saveTitle(userId, conversationId, title);

@@ -195,7 +195,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from './stores/authStore'
 import { useChatStore } from './stores/chatStore'
 import type { Message } from './stores/chatStore'
-import { deleteAccountApi, fetchConversationsApi, fetchLearningActivityApi, fetchUploadedFilesApi } from './services/api'
+import { deleteAccountApi, fetchConversationsApi, fetchCurrentUserApi, fetchLearningActivityApi, fetchUploadedFilesApi, logoutApi } from './services/api'
 import type { AuthUser, ConversationRecord, DailyLearningActivity } from './services/api'
 import { fallbackConversationTitle, readConversationTitles } from './services/conversationTitles'
 import ChatView from './views/ChatView.vue'
@@ -368,7 +368,16 @@ function handleConversationTitleUpdated(event: Event) {
   if (session) session.title = detail.title
 }
 
-onMounted(() => {
+onMounted(async () => {
+  if (authStore.user) {
+    try {
+      authStore.setUser(await fetchCurrentUserApi())
+      showAuth.value = false
+    } catch {
+      authStore.logout()
+      showAuth.value = true
+    }
+  }
   void loadContributionData()
   void loadUploadedFiles()
   void loadConversationSessions()
@@ -388,8 +397,9 @@ onUnmounted(() => {
 // 退出登录确认
 const showLogoutDialog = ref(false)
 
-function handleLogout() {
+async function handleLogout() {
   showLogoutDialog.value = false
+  try { await logoutApi() } catch { /* local logout still completes */ }
   authStore.logout()
   window.location.reload()
 }

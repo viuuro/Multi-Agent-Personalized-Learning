@@ -30,6 +30,11 @@ public class SubmissionRequest {
 
     private Long fileSize;
 
+    /** 计划中的具体任务位置，前端按任务提交时必填。 */
+    private Integer weekNumber;
+
+    private Integer taskIndex;
+
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
 
@@ -44,4 +49,10 @@ public class SubmissionRequest {
 
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+
+    public Integer getWeekNumber() { return weekNumber; }
+    public void setWeekNumber(Integer weekNumber) { this.weekNumber = weekNumber; }
+
+    public Integer getTaskIndex() { return taskIndex; }
+    public void setTaskIndex(Integer taskIndex) { this.taskIndex = taskIndex; }
 }

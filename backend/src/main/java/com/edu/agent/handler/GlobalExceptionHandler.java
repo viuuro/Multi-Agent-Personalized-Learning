@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 全局异常处理器 —— 统一返回 ApiResponse 格式的错误响应
@@ -43,6 +44,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /** Preserve controller-selected HTTP statuses and their safe user-facing reasons. */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResponseStatus(ResponseStatusException ex) {
+        int status = ex.getStatusCode().value();
+        String message = ex.getReason();
+        if (message == null || message.isBlank()) {
+            message = "请求处理失败";
+        }
+        log.warn("请求状态异常: status={}, reason={}", status, message);
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(ApiResponse.error(status, message));
+    }
 
     /**
      * 处理业务异常（如任务不存在、无权限等）

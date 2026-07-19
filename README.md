@@ -16,6 +16,9 @@
 | 成长档案 | Spring 异步任务 + JPA 版本关系 + MiMo 结构化评价 |
 | 语音陪伴 | MiMo `mimo-v2.5-tts-voiceclone` 非流式语音克隆 + HTMLAudioElement |
 
+数据结构与计算机组成原理的完整课程建库、知识点图谱、掌握度口径和智能体接入步骤见 [课程知识库接入方案](docs/course-agent-integration.md)。
+图片生成、资源存储与多模态审核的分阶段方案见 [图片学习资源智能体接入方案](docs/multimodal-agent-integration.md)。
+
 ## 智能决策链
 
 每轮对话按照以下流程处理：
@@ -332,6 +335,14 @@ MySQL 环境启动后会自动创建 `knowledge_chunk(heading, content)` 的 `ng
 KNOWLEDGE_SEED_SOFTWARE_ENGINEERING_ENABLED=true
 KNOWLEDGE_MYSQL_FULLTEXT_ENABLED=true
 ```
+
+### 学习资源收藏接口
+
+- `GET /api/resource-collections`：读取当前用户的课程收藏夹、自定义收藏夹及资源卡片；首次访问会初始化“数据结构”和“计算机组成原理”两个课程收藏夹。
+- `POST /api/resource-collections`：创建自定义收藏夹，请求体为 `{ "name": "期末冲刺" }`。
+- `POST /api/resource-collections/{collectionId}/resources`：收藏智能体推荐资源，保存标题、HTTPS 链接、平台、资源类型以及课程/章节 key。
+- `DELETE /api/resource-collections/{collectionId}/resources/{favoriteId}`：取消收藏。
+- `DELETE /api/resource-collections/{collectionId}`：删除自定义收藏夹；课程收藏夹不可删除。
 
 ### GET /api/profile
 

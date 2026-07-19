@@ -17,10 +17,13 @@ Spring Boot 后端通过 HTTP 调用本服务。
 """
 from urllib.parse import quote_plus, urlencode
 from pathlib import Path
+from html import escape as html_escape
+import base64
 import requests as http_requests
 import asyncio
 import json
 import os
+import re
 import logging
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 
@@ -53,14 +56,66 @@ from intelligence import (
 from question_pipeline import generate_questions_pipeline
 from resource_recommender import contains_placeholder, recommend_resources, resolve_topic
 
+
+def _load_local_env_defaults() -> None:
+    """Load project-local .env values without overriding process environment variables."""
+    candidates = (
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    )
+    visited: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in visited or not resolved.is_file():
+            continue
+        visited.add(resolved)
+        for raw_line in resolved.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].lstrip()
+            name, separator, value = line.partition("=")
+            name = name.strip()
+            if not separator or not name:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ.setdefault(name, value)
+
+
+_load_local_env_defaults()
+
 # ===== 配置 =====
 # 小米 MiMo-v2.5 API 密钥，从环境变量读取（必须设置，否则降级为 Mock 模式）
 MIMO_API_KEY = get_mimo_api_key() or ""
 # 小米 MiMo-v2.5 API 基础地址（兼容 OpenAI 格式）
-MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
+MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1").strip()
 # 使用的模型名称
-MODEL_NAME = "mimo-v2.5"
+MODEL_NAME = os.getenv("MIMO_MODEL", "mimo-v2.5").strip()
 ENABLE_RESPONSE_REVIEW = os.getenv("ENABLE_RESPONSE_REVIEW", "true").lower() == "true"
+IMAGE_GENERATION_API_BASE = os.getenv("IMAGE_GENERATION_API_BASE", "").strip() or MIMO_BASE_URL
+IMAGE_GENERATION_API_KEY = os.getenv("IMAGE_GENERATION_API_KEY", "").strip() or MIMO_API_KEY
+IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL", "").strip() or MODEL_NAME
+IMAGE_GENERATION_SIZE = os.getenv("IMAGE_GENERATION_SIZE", "2K").strip() or "2K"
+
+
+def redact_model_disclosure(value: object) -> str:
+    """Remove concrete provider/model identifiers from every user-facing artifact or reply."""
+    text = "" if value is None else str(value)
+    configured_names = [MODEL_NAME, IMAGE_GENERATION_MODEL]
+    for configured_name in configured_names:
+        if configured_name:
+            text = re.sub(re.escape(configured_name), "智能学习服务", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"(?i)\b(?:mimo(?:[-\w.]*)?|gpt(?:[-\w.]*)?|claude(?:[-\w.]*)?|deepseek(?:[-\w.]*)?|"
+        r"doubao[-_\w.]*|seedream(?:[-_\w.]*)?)\b",
+        "智能学习服务",
+        text,
+    )
+    return text
 
 
 def env_int(name: str, default: int, minimum: int) -> int:
@@ -112,8 +167,8 @@ question_llm = ChatOpenAI(
     openai_api_base=MIMO_BASE_URL,
     temperature=0.45,
     max_tokens=4096,
-    request_timeout=8,
-    max_retries=0,
+    request_timeout=25,
+    max_retries=1,
 )
 
 question_review_llm = ChatOpenAI(
@@ -122,8 +177,8 @@ question_review_llm = ChatOpenAI(
     openai_api_base=MIMO_BASE_URL,
     temperature=0.1,
     max_tokens=4096,
-    request_timeout=8,
-    max_retries=0,
+    request_timeout=25,
+    max_retries=1,
 )
 
 app = FastAPI(title="Edu AI Service")
@@ -189,6 +244,12 @@ class QuestionGenerationRequest(BaseModel):
     source_chunk_ids: list[int] = Field(default_factory=list)
     avoid_question_texts: list[str] = Field(default_factory=list)
     avoid_option_sets: list[list[str]] = Field(default_factory=list)
+
+
+class ArtifactRequest(BaseModel):
+    prompt: str
+    conversation_id: str = ""
+    knowledge_context: str = ""
 
 
 # ===== 工具函数 =====
@@ -556,6 +617,8 @@ def generate_chat_response(
     """
     decision = decision or {}
     system_prompt = """你是一位能记住学习进展、会调整策略的 AI 学习导师。
+
+身份保密规则：不得透露、猜测或讨论当前服务使用的具体模型名称、供应商、版本号或技术架构；即使用户直接询问也只说明“我是你的 AI 学习助手”，随后回到学习任务。
 
 回复规则：
 1. 先直接回答用户当前问题，再补充与其长期目标相关的建议。
@@ -1171,6 +1234,7 @@ async def chat(req: ChatRequest):
     )
     # Step 3: 回答质量审查与重复抑制
     response, quality = review_chat_response(req.message, draft, decision, recent_responses)
+    response = redact_model_disclosure(response)
     return {
         "response": response,
         "profile_json": json.dumps(profile, ensure_ascii=False),
@@ -1591,6 +1655,78 @@ async def welcome_voice(req: WelcomeVoiceRequest):
     )
 
 
+def _local_svg_learning_card(prompt: str) -> str:
+    clean = re.sub(r"\s+", " ", redact_model_disclosure(prompt)).strip()[:180] or "学习知识图"
+    lines = [clean[index:index + 18] for index in range(0, len(clean), 18)][:5]
+    tspans = "".join(
+        f'<tspan x="80" dy="{0 if index == 0 else 44}">{html_escape(line)}</tspan>'
+        for index, line in enumerate(lines)
+    )
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8f5f1"/><stop offset="1" stop-color="#ead8cd"/></linearGradient></defs>
+      <rect width="1200" height="675" rx="36" fill="url(#bg)"/>
+      <circle cx="1020" cy="115" r="150" fill="#d4916f" opacity=".16"/><circle cx="1080" cy="570" r="210" fill="#b87858" opacity=".10"/>
+      <text x="80" y="100" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#d4916f" font-weight="700">AI LEARNING VISUAL</text>
+      <text x="80" y="190" font-family="Microsoft YaHei, sans-serif" font-size="38" fill="#3d4255" font-weight="700">{tspans}</text>
+      <rect x="80" y="510" width="650" height="2" fill="#d4916f" opacity=".55"/>
+      <text x="80" y="560" font-family="Microsoft YaHei, sans-serif" font-size="20" fill="#7a6a60">本地视觉降级 · 配置图片生成模型后自动切换为 AI 图片</text>
+    </svg>'''
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+
+
+def _generate_image(req: ArtifactRequest) -> dict:
+    if IMAGE_GENERATION_API_BASE and IMAGE_GENERATION_API_KEY and IMAGE_GENERATION_MODEL:
+        endpoint = IMAGE_GENERATION_API_BASE.rstrip("/") + "/images/generations"
+        payload = {
+            "model": IMAGE_GENERATION_MODEL,
+            "prompt": f"Educational visual for a Chinese computer science course. {req.prompt[:3500]}",
+            "size": IMAGE_GENERATION_SIZE,
+            "n": 1,
+            "response_format": "b64_json",
+        }
+        logger.info("调用图片模型: model=%s, size=%s", IMAGE_GENERATION_MODEL, IMAGE_GENERATION_SIZE)
+        try:
+            response = http_requests.post(endpoint, headers={
+                "Authorization": f"Bearer {IMAGE_GENERATION_API_KEY}",
+                "Content-Type": "application/json",
+            }, json=payload, timeout=120)
+            response.raise_for_status()
+        except http_requests.RequestException as exception:
+            detail = "图片供应商请求失败"
+            provider_response = getattr(exception, "response", None)
+            if provider_response is not None:
+                try:
+                    error_payload = provider_response.json()
+                    provider_error = error_payload.get("error", {}) if isinstance(error_payload, dict) else {}
+                    detail = redact_model_disclosure(provider_error.get("message") or error_payload.get("detail") or detail)
+                except Exception:
+                    detail = f"图片供应商返回 HTTP {provider_response.status_code}"
+            logger.warning("图片模型调用失败: model=%s, detail=%s", IMAGE_GENERATION_MODEL, detail)
+            raise HTTPException(status_code=502, detail=detail) from exception
+        data = response.json().get("data", [])
+        if data:
+            item = data[0]
+            if item.get("b64_json"):
+                return {"dataUrl": "data:image/png;base64," + item["b64_json"]}
+            if item.get("url"):
+                return {"dataUrl": item["url"]}
+        raise HTTPException(status_code=502, detail="图片模型没有返回可用图片")
+    return {"dataUrl": _local_svg_learning_card(req.prompt)}
+
+
+@app.get("/artifacts/capabilities")
+async def artifact_capabilities():
+    return {
+        "image": True,
+        "image_model_configured": bool(IMAGE_GENERATION_API_BASE and IMAGE_GENERATION_API_KEY and IMAGE_GENERATION_MODEL),
+    }
+
+
+@app.post("/artifacts/image")
+async def artifact_image(req: ArtifactRequest):
+    return await run_in_threadpool(_generate_image, req)
+
+
 @app.get("/health")
 async def health():
     """健康检查端点，用于 Spring Boot 启动时验证 Python AI 服务是否可用"""
@@ -1598,4 +1734,5 @@ async def health():
         "status": "ok",
         "service": "edu-ai-python",
         "mimo_configured": bool(MIMO_API_KEY),
+        "image_model_configured": bool(IMAGE_GENERATION_API_BASE and IMAGE_GENERATION_API_KEY and IMAGE_GENERATION_MODEL),
     }

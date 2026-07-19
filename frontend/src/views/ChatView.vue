@@ -199,16 +199,26 @@
               </div>
             </div>
           </transition>
+          <div class="artifact-mode-bar" aria-label="选择智能体输出资源类型">
+            <button
+              v-for="mode in artifactModes"
+              :key="mode.value"
+              type="button"
+              :class="{ active: outputMode === mode.value }"
+              :disabled="chatStore.isStreaming"
+              @click="setOutputMode(mode.value)"
+            >{{ mode.label }}</button>
+          </div>
           <div ref="capsuleBarRef" class="capsule-bar">
             <!-- + 按钮 -->
-            <button class="plus-btn" type="button" aria-label="添加图片或文件" @click.stop="showPlusMenu = !showPlusMenu">
+            <button class="plus-btn" type="button" aria-label="添加图片或文件" :disabled="outputMode !== 'TEXT'" @click.stop="showPlusMenu = !showPlusMenu">
               <UiIcon name="plus" />
             </button>
             <textarea
               ref="inputRef"
               v-model="inputText"
               class="capsule-input"
-              :placeholder="stagedImage ? '输入关于图片的问题... (Enter 发送)' : stagedFile ? '输入关于文件的问题... (Enter 发送)' : '输入你的学习情况或问题... (Enter 发送 / Shift+Enter 换行)'"
+              :placeholder="outputMode === 'IMAGE' ? '描述要生成的知识图、流程图或学习图片...' : stagedImage ? '输入关于图片的问题... (Enter 发送)' : stagedFile ? '输入关于文件的问题... (Enter 发送)' : '输入你的学习情况或问题... (Enter 发送 / Shift+Enter 换行)'"
               rows="1"
               @keydown.enter="handleEnter"
               @input="autoResize"
@@ -330,6 +340,7 @@ import {
   submitLearningResultApi,
   fetchSubmissionApi,
   fetchConversationSubmissionsApi,
+  generateImageArtifactApi,
 } from '../services/api'
 import type { LearningPlan, SubmissionDetail } from '../services/api'
 import { fallbackConversationTitle, readConversationTitles, saveConversationTitle } from '../services/conversationTitles'
@@ -362,6 +373,12 @@ const planHasData = ref(false)
 const SIDEBAR_OPEN_KEY = 'edu-agent-sidebar-open'
 const sidebarOpen = ref(localStorage.getItem(SIDEBAR_OPEN_KEY) !== 'false')
 const showPlusMenu = ref(false)
+type ArtifactOutputMode = 'TEXT' | 'IMAGE'
+const outputMode = ref<ArtifactOutputMode>('TEXT')
+const artifactModes: Array<{ value: ArtifactOutputMode; label: string }> = [
+  { value: 'TEXT', label: '问答' },
+  { value: 'IMAGE', label: '图片' },
+]
 const imageInputRef = ref<HTMLInputElement>()
 const fileInputRef = ref<HTMLInputElement>()
 
@@ -540,6 +557,19 @@ async function handleSend() {
   const hasImage = !!stagedImage.value
   const hasFile = !!stagedFile.value
   if ((!text && !hasImage && !hasFile) || chatStore.isStreaming) return
+
+  if (outputMode.value !== 'TEXT') {
+    if (!text) {
+      ElMessage.warning('请先描述希望生成的资源内容')
+      return
+    }
+    if (hasImage || hasFile) {
+      ElMessage.warning('图片生成暂不支持同时上传附件，请先移除附件')
+      return
+    }
+    await generateImageArtifact(text)
+    return
+  }
 
   // 如果有文件，先解析文件内容
   if (hasFile) {
@@ -749,7 +779,7 @@ async function handleSubmissionFileSelected(e: Event) {
     }
     if (!evaluationResult.value) {
       evaluationResult.value = transientGrowthResult(
-        'AI 评分超时，请稍后重试', '请稍后重新打开当前对话，或检查 MiMo API 配置。')
+        'AI 评分超时，请稍后重试', '请稍后重新打开当前对话，或检查智能服务配置。')
     }
   } catch (err: unknown) {
     evaluationResult.value = transientGrowthResult(
@@ -793,6 +823,41 @@ function streamGreeting(text: string) {
       chatStore.finishStreaming()
     }
   }, 35)
+}
+
+function setOutputMode(mode: ArtifactOutputMode) {
+  outputMode.value = mode
+  showPlusMenu.value = false
+  if (mode !== 'TEXT') {
+    clearStagedImage()
+    clearStagedFile()
+  }
+  void nextTick(() => inputRef.value?.focus())
+}
+
+async function generateImageArtifact(prompt: string) {
+  chatStore.addMessage({
+    id: Date.now().toString(), role: 'user', content: `【生成图片】${prompt}`, timestamp: Date.now(),
+  })
+  inputText.value = ''
+  chatStore.startStreaming()
+  scrollToBottom()
+  try {
+    const result = await generateImageArtifactApi(prompt, chatStore.conversationId || undefined)
+    chatStore.finishStreaming()
+    chatStore.addMessage({
+      id: `${Date.now()}-image`, role: 'assistant',
+      content: '学习图片已生成。',
+      imageUrl: result.dataUrl, timestamp: Date.now(),
+    })
+  } catch (error) {
+    chatStore.appendStreamContent(`\n\n[资源生成失败：${error instanceof Error ? error.message : '服务暂时不可用'}]`)
+    chatStore.finishStreaming()
+  } finally {
+    await nextTick()
+    autoResize()
+    scrollToBottom()
+  }
 }
 
 let greetingTimer: ReturnType<typeof setInterval> | null = null
@@ -1395,13 +1460,17 @@ watch(sidebarOpen, value => {
 .right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: transparent; padding: 12px 12px 12px 0; margin-left: 16px; }
 .chat-card { position: relative; background: transparent; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-card::before { content: ''; position: absolute; inset: 0; background: transparent; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 20px; z-index: -1; box-shadow: none; }
-.message-list { position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 0px 10px; }
+.message-list { position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 0 10px; }
 .loading-indicator { display: flex; gap: 4px; padding: 12px 0; }
 .dot { width: 6px; height: 6px; background: var(--text-placeholder); border-radius: 50%; animation: bounce 1.2s infinite; }
 .dot:nth-child(2) { animation-delay: 0.2s; }
 .dot:nth-child(3) { animation-delay: 0.4s; }
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 .input-area { position: relative; z-index: 5; padding: 12px 16px 0; background: transparent; flex-shrink: 0; margin-bottom: 16px; }
+.artifact-mode-bar { min-height: 32px; display: flex; align-items: center; gap: 6px; margin: 0 5px 8px; }
+.artifact-mode-bar button { min-width: 56px; height: 30px; padding: 0 12px; border: 1px solid var(--border-solid); border-radius: 9px; background: var(--ai-bubble-bg); color: var(--text-faint); font-size: 12px; font-weight: 600; cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+.artifact-mode-bar button:hover:not(:disabled), .artifact-mode-bar button.active { border-color: var(--accent); background: var(--accent-hover); color: var(--accent); }
+.artifact-mode-bar button:disabled { opacity: .45; cursor: not-allowed; }
 .capsule-bar { display: flex; align-items: flex-end; background: var(--bg-input); backdrop-filter: blur(20px) saturate(1.3); -webkit-backdrop-filter: blur(20px) saturate(1.3); border: 1px solid var(--border-solid); border-radius: 16px; padding: 4px 4px 4px 4px; box-shadow: none; }
 .plus-btn { flex-shrink: 0; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-right: 8px; }
 .plus-btn .ui-icon { width: 19px; height: 19px; }

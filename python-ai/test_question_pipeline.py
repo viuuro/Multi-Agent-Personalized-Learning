@@ -18,6 +18,7 @@ class QuestionPipelineTest(unittest.TestCase):
         self.assertEqual("database", infer_course_family("MySQL 事务隔离与索引"))
         self.assertEqual("mathematics", infer_course_family("线性代数矩阵运算"))
         self.assertEqual("systems", infer_course_family("操作系统进程调度"))
+        self.assertEqual("computer_organization", infer_course_family("计算机组成原理 Cache 地址映射"))
         self.assertEqual("network", infer_course_family("计算机网络 TCP 协议"))
 
     def test_choice_validation_rejects_ambiguous_or_malformed_answers(self):

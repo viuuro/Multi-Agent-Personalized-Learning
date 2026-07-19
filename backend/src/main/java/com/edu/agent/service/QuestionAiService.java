@@ -224,8 +224,9 @@ public class QuestionAiService {
             case "HARD" -> "评价与迁移";
             default -> "应用与分析";
         };
-        List<GeneratedQuestion> result = new ArrayList<>();
-        for (int position = 1; position <= count; position++) {
+        List<GeneratedQuestion> result = new ArrayList<>(specializedFallback(
+                topic, task, type, level, sourceChunkIds, offset, count));
+        for (int position = result.size() + 1; position <= count; position++) {
             int index = offset + position;
             String[] focuses = {"概念理解", "实践验证", "边界条件", "错误诊断", "方案比较",
                     "过程记录", "结果验收", "知识迁移", "复盘改进", "后续规划"};
@@ -258,6 +259,110 @@ public class QuestionAiService {
             }
         }
         return result;
+    }
+
+    /** 在模型不可用时，数据结构与计组仍优先返回可计算的专业题，而不是元学习方法题。 */
+    private List<GeneratedQuestion> specializedFallback(String topic, String task, String type,
+                                                        String level, List<Long> sourceChunkIds,
+                                                        int offset, int limit) {
+        if (offset >= 10 || limit <= 0) return List.of();
+        String text = (topic + " " + task).toLowerCase(Locale.ROOT);
+        List<GeneratedQuestion> result = new ArrayList<>();
+        boolean dataStructure = containsAny(text, "数据结构", "链表", "队列", "栈", "二叉树", "图", "排序", "哈希", "查找", "堆");
+        boolean organization = containsAny(text, "计算机组成", "组成原理", "补码", "cache", "指令", "流水线", "控制器", "dma", "中断", "运算器");
+        if (dataStructure) {
+            addDataStructureFallback(result, text, type, level, sourceChunkIds);
+        } else if (organization) {
+            addOrganizationFallback(result, text, type, level, sourceChunkIds);
+        }
+        return result.subList(0, Math.min(limit, result.size()));
+    }
+
+    private void addDataStructureFallback(List<GeneratedQuestion> target, String context, String type,
+                                          String level, List<Long> sources) {
+        String point = containsAny(context, "树", "二叉树", "堆") ? "树与二叉树"
+                : containsAny(context, "图", "最短路径", "拓扑") ? "图"
+                : containsAny(context, "排序", "快排", "归并") ? "排序"
+                : containsAny(context, "栈", "队列") ? "栈与队列" : "线性表与链表";
+        if ("TRUE_FALSE".equals(type)) {
+            target.add(question("在单链表中，如果已经持有待插入位置前驱结点的引用，则插入一个新结点的核心指针修改可在 O(1) 时间内完成。",
+                    List.of("正确", "错误"), "A",
+                    "已知前驱后无需从头查找，只需修改常数个 next 引用，因此核心插入操作为 O(1)；若还要先定位前驱，定位过程可能是 O(n)。",
+                    point, "区分定位成本与链表指针修改成本", level, sources, 78));
+            target.add(question("对含 n 个元素的顺序表，在下标 0 处插入新元素时，最坏情况下不需要移动原有元素。",
+                    List.of("正确", "错误"), "B",
+                    "在表头插入要把原有 n 个元素整体后移一个位置，因此移动次数为 n，时间复杂度为 O(n)。",
+                    point, "计算顺序表边界位置插入的移动代价", level, sources, 78));
+        } else if ("SHORT_ANSWER".equals(type)) {
+            target.add(question("设 p 指向非空单链表中的结点，要把新结点 s 插入到 p 之后。写出两条关键赋值语句，并说明为什么赋值顺序不能交换。",
+                    List.of(), "s.next=p.next；p.next=s；避免丢失后继链",
+                    "应先令 s.next 指向 p 原来的后继，再令 p.next 指向 s。若先覆盖 p.next，就会失去原后继结点的引用，造成后续链断开。",
+                    point, "正确完成单链表结点插入并解释指针更新不变量", level, sources, 80));
+            target.add(question("比较顺序表与单链表在“按下标随机访问”和“已知前驱结点后插入”两种操作上的时间复杂度。",
+                    List.of(), "顺序表随机访问O(1)；链表随机访问O(n)；顺序表插入O(n)；链表插入O(1)",
+                    "顺序表地址连续，可按下标 O(1) 定位，但插入通常需要移动元素；单链表必须沿 next 访问下标，而已知前驱后的指针修改是常数次。",
+                    point, "依据操作类型比较线性结构表示的复杂度", level, sources, 82));
+        } else if ("MULTIPLE_CHOICE".equals(type)) {
+            target.add(question("关于单链表结点插入与删除，下列哪些说法在题设条件下正确？",
+                    List.of("已知前驱结点时，在其后插入新结点只需修改常数个引用", "删除某结点的直接后继前必须先判断该后继是否存在", "仅持有头结点时可在 O(1) 时间访问任意下标", "删除结点后无需处理任何被移除结点的引用"),
+                    "A,B", "A 的指针修改次数为常数；B 是避免空引用的必要边界检查。按下标访问仍需遍历，删除后也应按语言和实现要求断开或释放结点。",
+                    point, "识别链表操作的复杂度与边界条件", level, sources, 82));
+        } else {
+            target.add(question("长度为 8 的顺序表采用 0 起始下标。若在下标 3 处插入一个新元素，使原下标 3 及其后的元素右移，需要移动多少个原有元素？",
+                    List.of("3", "4", "5", "8"), "C",
+                    "原下标 3、4、5、6、7 的 5 个元素都要右移，因此移动次数为 8-3=5。",
+                    point, "根据插入位置计算顺序表元素移动次数", level, sources, 84));
+            target.add(question("p 指向单链表结点 A，A 的后继为 B。要把新结点 X 插入到 A 与 B 之间，哪组赋值顺序正确？",
+                    List.of("p.next=X；X.next=p.next", "X.next=p.next；p.next=X", "X.next=p；p.next=X", "p=X；X.next=p.next"), "B",
+                    "先保存原后继关系 X.next=p.next，使 X 指向 B；再执行 p.next=X，使 A 指向 X。反向执行会让 X.next 指向自身。",
+                    point, "跟踪链表插入时的引用变化", level, sources, 86));
+        }
+    }
+
+    private void addOrganizationFallback(List<GeneratedQuestion> target, String context, String type,
+                                         String level, List<Long> sources) {
+        String point = containsAny(context, "cache", "存储", "主存") ? "Cache 与存储层次"
+                : containsAny(context, "流水线", "cpi", "数据通路") ? "CPU 数据通路与流水线"
+                : containsAny(context, "中断", "dma", "输入输出") ? "输入输出系统"
+                : "数据表示与运算";
+        if ("TRUE_FALSE".equals(type)) {
+            target.add(question("在 8 位二进制补码表示中，数值范围是 -128 到 127。",
+                    List.of("正确", "错误"), "A",
+                    "n 位补码的范围为 -2^(n-1) 到 2^(n-1)-1；代入 n=8 得 -128 到 127。",
+                    point, "判断给定字长补码的表示范围", level, sources, 82));
+            target.add(question("在直接映射 Cache 中，一个主存块可以放入任意一个 Cache 行。",
+                    List.of("正确", "错误"), "B",
+                    "直接映射由主存块号对 Cache 行数取模确定唯一行；可以放入任意行的是全相联映射的特征。",
+                    point, "区分直接映射与全相联映射", level, sources, 82));
+        } else if ("SHORT_ANSWER".equals(type)) {
+            target.add(question("某直接映射 Cache 有 16 行，每块 16 B，主存按字节编址。说明 32 位地址中的块内偏移位数和行索引位数如何确定。",
+                    List.of(), "块内偏移4位；行索引4位；其余为标记位",
+                    "每块 16 B，需要 log2(16)=4 位选择块内字节；16 行需要 log2(16)=4 位选择 Cache 行；剩余 24 位为标记。",
+                    point, "拆分直接映射 Cache 的地址字段", level, sources, 86));
+            target.add(question("说明 CPU 执行时间公式中指令数、CPI 和时钟周期三者的关系，并指出只提高主频为什么不一定等比例提升性能。",
+                    List.of(), "执行时间=指令数×CPI×时钟周期；主频与时钟周期互为倒数；CPI可能变化",
+                    "执行时间由三项乘积共同决定。提高主频会缩短时钟周期，但若同时引入更深流水线、更多停顿或改变 CPI，整体加速不会只由频率决定。",
+                    point, "使用 CPU 性能公式分析体系结构权衡", level, sources, 86));
+        } else if ("MULTIPLE_CHOICE".equals(type)) {
+            target.add(question("关于直接映射 Cache 的地址划分，下列哪些说法正确？",
+                    List.of("块内偏移由每块包含的字节数决定", "行索引由 Cache 行数决定", "标记字段用于区分映射到同一行的不同主存块", "替换时必须在所有 Cache 行中执行全局 LRU"),
+                    "A,B,C", "偏移、索引和标记分别完成块内定位、选行和身份校验；直接映射每块只有唯一候选行，不需要全局 LRU 选择。",
+                    point, "解释直接映射 Cache 地址字段的作用", level, sources, 86));
+        } else {
+            target.add(question("采用 8 位补码表示时，十进制 -18 的机器数是哪一项？",
+                    List.of("00010010", "11101101", "11101110", "10010010"), "C",
+                    "+18 为 00010010，逐位取反得到 11101101，再加 1 得 11101110。",
+                    point, "计算定长补码机器数", level, sources, 88));
+            target.add(question("某直接映射 Cache 有 16 行，每块 16 B，主存按字节编址。地址 0x012C 的块内偏移是多少？",
+                    List.of("0x0", "0xC", "0x12", "0x2C"), "B",
+                    "块大小为 16 B，块内偏移由地址最低 4 位给出；0x012C 的最低十六进制位为 C，因此偏移为 0xC。",
+                    point, "根据块大小计算 Cache 块内偏移", level, sources, 88));
+        }
+    }
+
+    private boolean containsAny(String text, String... terms) {
+        for (String term : terms) if (text.contains(term)) return true;
+        return false;
     }
 
     private GeneratedQuestion question(String text, List<String> options, String answer, String explanation,

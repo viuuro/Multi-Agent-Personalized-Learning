@@ -73,6 +73,18 @@ const menuX = ref(126)
 const menuY = ref(196)
 let contextMenuCleanup: (() => void) | null = null
 
+const uiControlSelector = 'input, button, textarea, a, [contenteditable="true"], .el-button, .el-collapse-item__header, .voice-context-card'
+const modelHitArea = {
+  topRatio: 0.02,
+  rightRatio: 0.66,
+  bottomRatio: 0.88,
+  horizontalPadding: 14,
+}
+
+function isUiControlTarget(target: EventTarget | null) {
+  return target instanceof Element && !!target.closest(uiControlSelector)
+}
+
 function isPointOnModel(clientX: number, clientY: number) {
   if (!modelReady.value) return false
   const canvas = live2dRef.value?.querySelector('canvas')
@@ -98,14 +110,29 @@ function isPointOnModel(clientX: number, clientY: number) {
   }
 }
 
+function isPointInModelHitArea(clientX: number, clientY: number) {
+  const container = rootRef.value
+  if (!container || !modelReady.value) return false
+
+  const rect = container.getBoundingClientRect()
+  const top = rect.top + rect.height * modelHitArea.topRatio
+  const right = rect.left + rect.width * modelHitArea.rightRatio
+  const bottom = rect.top + rect.height * modelHitArea.bottomRatio
+  if (clientX < rect.left || clientX > right || clientY < top || clientY > bottom) return false
+
+  // 以模型真实命中为核心，左右各放宽少量距离，避免头发和身体边缘难以点中。
+  return isPointOnModel(clientX, clientY)
+    || isPointOnModel(clientX - modelHitArea.horizontalPadding, clientY)
+    || isPointOnModel(clientX + modelHitArea.horizontalPadding, clientY)
+}
+
 function attachContextMenu() {
   const openMenu = (event: MouseEvent) => {
     const container = rootRef.value
     if (!container) return
+    if (isUiControlTarget(event.target)) return
     const rect = container.getBoundingClientRect()
-    // 外层容器不接管鼠标事件，因此按 PIXI 中模型的实际边界判断命中。
-    // 这样既能响应模型右键，又不会遮挡其透明区域下方的左侧功能。
-    if (!isPointOnModel(event.clientX, event.clientY)) return
+    if (!isPointInModelHitArea(event.clientX, event.clientY)) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -194,16 +221,9 @@ function attachClickListener() {
   const handler = (e: MouseEvent) => {
     if (e.button !== 0) return
 
-    // 点击不在容器矩形内 → 放行
-    const container = rootRef.value
-    if (!container) return
-    const r = container.getBoundingClientRect()
-    if (e.clientX < r.left || e.clientX > r.right ||
-        e.clientY < r.top || e.clientY > r.bottom) return
-
-    // 容器内的点击，但如果落在交互控件上 → 放行给 UI
-    const target = e.target as Element
-    if (target?.closest('input, button, textarea, a, .el-button, .el-collapse-item__header')) return
+    // 输入框等界面控件始终优先；其余位置只在头部和身体命中区内响应。
+    if (isUiControlTarget(e.target)) return
+    if (!isPointInModelHitArea(e.clientX, e.clientY)) return
 
     e.stopPropagation()
     e.stopImmediatePropagation()

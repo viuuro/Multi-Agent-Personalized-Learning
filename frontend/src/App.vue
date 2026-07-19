@@ -1135,10 +1135,13 @@ input:-webkit-autofill:active {
   flex-direction: column;
   gap: 2px;
   max-height: clamp(72px, calc(100vh - 689px), 178px);
-  padding-right: 2px;
+  padding-left: 2px;
   overflow-y: auto;
+  direction: rtl;
+  scrollbar-gutter: stable;
 }
 .conversation-item {
+  direction: ltr;
   width: 100%;
   min-width: 0;
   display: flex;

@@ -36,6 +36,26 @@ export interface ResourceItem {
 
 export type ResourceFeedbackEvent = 'CLICK' | 'HELPFUL' | 'NOT_HELPFUL' | 'COMPLETED'
 
+export interface FavoriteResource {
+  id: number
+  collectionId: number
+  title: string
+  url: string
+  platform?: string
+  type?: string
+  courseKey?: string
+  chapterKey?: string
+  createdAt: string
+}
+
+export interface ResourceCollection {
+  id: number
+  name: string
+  kind: 'COURSE' | 'CUSTOM'
+  courseKey?: string
+  resources: FavoriteResource[]
+}
+
 /** 完整的 4 周学习计划 */
 export interface LearningPlan {
   weeks: LearningPlanWeek[]
@@ -341,6 +361,50 @@ export async function recordResourceFeedbackApi(
       event,
     }),
   })
+}
+
+export async function fetchResourceCollectionsApi(): Promise<ResourceCollection[]> {
+  const res = await request<ResourceCollection[]>('/resource-collections')
+  return res.data || []
+}
+
+export async function createResourceCollectionApi(name: string): Promise<ResourceCollection> {
+  const res = await request<ResourceCollection>('/resource-collections', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+  return res.data
+}
+
+export async function favoriteResourceApi(
+  collectionId: number,
+  payload: ResourceItem & { conversationId?: string; courseKey?: string; chapterKey?: string },
+): Promise<FavoriteResource> {
+  const res = await request<FavoriteResource>(`/resource-collections/${collectionId}/resources`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.data
+}
+
+export async function removeFavoriteResourceApi(collectionId: number, favoriteId: number): Promise<void> {
+  await request<void>(`/resource-collections/${collectionId}/resources/${favoriteId}`, { method: 'DELETE' })
+}
+
+export async function deleteResourceCollectionApi(collectionId: number): Promise<void> {
+  await request<void>(`/resource-collections/${collectionId}`, { method: 'DELETE' })
+}
+
+export interface GeneratedImageArtifact {
+  dataUrl: string
+}
+
+export async function generateImageArtifactApi(prompt: string, conversationId?: string): Promise<GeneratedImageArtifact> {
+  const res = await request<GeneratedImageArtifact>('/artifacts/image', {
+    method: 'POST',
+    body: JSON.stringify({ prompt, conversationId }),
+  })
+  return res.data
 }
 
 export async function fetchPracticeQuestionsApi(conversationId: string): Promise<PracticeQuestion[]> {

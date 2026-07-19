@@ -2,14 +2,34 @@
   <section class="practice-workspace" aria-label="练习空间">
     <aside class="practice-left">
       <div class="practice-brand">
-        <h2>练习空间</h2>
+        <div class="practice-brand-row">
+          <h2>{{ workspaceMode === 'practice' ? '练习空间' : '学习总览' }}</h2>
+          <button
+            class="workspace-mode-switch"
+            :class="{ overview: workspaceMode === 'overview' }"
+            type="button"
+            role="switch"
+            :aria-checked="workspaceMode === 'overview'"
+            aria-label="切换练习空间与学习总览"
+            @click="workspaceMode = workspaceMode === 'practice' ? 'overview' : 'practice'"
+          >
+            <i aria-hidden="true"></i>
+            <span :class="{ active: workspaceMode === 'practice' }">练习</span>
+            <span :class="{ active: workspaceMode === 'overview' }">总览</span>
+          </button>
+        </div>
         <p>{{ chatStore.conversationTitle || '当前学习对话' }}</p>
       </div>
 
-      <PracticeStatsPie :questions="questions" />
+      <PracticeStatsPie v-if="workspaceMode === 'practice'" :questions="questions" />
+      <div v-else class="overview-side-copy">
+        <span>课程知识地图</span>
+        <strong>2 门课程 · 16 个核心章节</strong>
+        <p>掌握度由计划覆盖、练习提交与正确率共同计算，随着学习证据实时更新。</p>
+      </div>
     </aside>
 
-    <main class="practice-main">
+    <main v-if="workspaceMode === 'practice'" class="practice-main">
       <header class="practice-header">
         <div>
           <h1>把每个小任务变成可完成的题目</h1>
@@ -185,6 +205,12 @@
         </article>
       </div>
     </main>
+    <LearningOverview
+      v-else
+      :plan="plan"
+      :questions="questions"
+      :conversation-id="chatStore.conversationId"
+    />
   </section>
 </template>
 
@@ -207,8 +233,10 @@ import type {
 } from '../services/api'
 import UiIcon from './UiIcon.vue'
 import PracticeStatsPie from './PracticeStatsPie.vue'
+import LearningOverview from './LearningOverview.vue'
 
 const chatStore = useChatStore()
+const workspaceMode = ref<'practice' | 'overview'>('practice')
 const plan = ref<LearningPlan | null>(null)
 const questions = ref<PracticeQuestion[]>([])
 const activeQuestionId = ref<number | null>(null)
@@ -401,8 +429,19 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
   padding: 38px 18px;
   overflow: hidden;
 }
+.practice-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .practice-brand h2 { margin: 0; color: var(--text-secondary); font-size: 14px; font-weight: 700; line-height: 32px; }
 .practice-brand p { margin: 0; color: var(--text-faint); font-size: 11px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-mode-switch { position: relative; width: 96px; height: 30px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); align-items: center; padding: 2px; border: 1px solid var(--border-solid); border-radius: 9px; background: var(--bg-input); color: var(--text-faint); font-size: 10px; cursor: pointer; overflow: hidden; }
+.workspace-mode-switch span { position: relative; z-index: 1; display: grid; place-items: center; height: 100%; transition: color .2s ease; }
+.workspace-mode-switch span.active { color: #fff; }
+.workspace-mode-switch i { position: absolute; z-index: 0; top: 2px; left: 2px; width: calc(50% - 2px); height: calc(100% - 4px); border-radius: 6px; background: var(--accent); box-shadow: none; transition: transform .22s ease; }
+.workspace-mode-switch.overview i { transform: translateX(100%); }
+.overview-side-copy { margin-top: 42px; padding: 18px 15px; border: 1px solid var(--border-solid); border-radius: 14px; background: var(--ai-bubble-bg); }
+.overview-side-copy span, .overview-side-copy strong { display: block; }
+.overview-side-copy span { margin-bottom: 7px; color: var(--accent); font-size: 10px; }
+.overview-side-copy strong { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.overview-side-copy p { margin: 11px 0 0; color: var(--text-faint); font-size: 10px; line-height: 1.7; }
 .type-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .type-chips button { width: 100%; height: 27px; padding: 0 2px; border: 1px solid var(--border-solid); border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 9px; cursor: pointer; }
 .type-chips button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-hover); }
@@ -461,11 +500,11 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .answer-meta span, .answer-meta > strong { padding: 4px 7px; border: 1px solid var(--border-solid); border-radius: 7px; background: var(--bg-input); color: var(--text-faint); font-size: 9px; font-weight: 500; }
 .answer-meta > strong.submitted { border-color: var(--practice-success-border); color: var(--practice-success); background: var(--practice-success-soft); }
 .answer-task { margin: 16px 0 5px; color: var(--accent); font-size: 10px; }
-.answer-inner h2 { margin: 0 0 16px; color: var(--text-primary); font-size: 16px; line-height: 1.65; font-weight: 600; }
+.answer-inner h2 { margin: 0 0 16px; color: var(--text-primary); font-size: 18px; line-height: 1.65; font-weight: 600; }
 .answer-options { display: grid; gap: 8px; }
 .answer-options button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 11px; border: 1px solid var(--border-solid); border-radius: 11px; background: var(--bg-input); color: var(--text-secondary); text-align: left; cursor: pointer; }
-.answer-options button > span { width: 25px; height: 25px; flex: 0 0 25px; display: grid; place-items: center; border: 1px solid var(--border-solid); border-radius: 8px; color: var(--accent); font-size: 10px; }
-.answer-options button p { margin: 0; font-size: 11px; line-height: 1.5; }
+.answer-options button > span { width: 25px; height: 25px; flex: 0 0 25px; display: grid; place-items: center; border: 1px solid var(--border-solid); border-radius: 8px; color: var(--accent); font-size: 12px; }
+.answer-options button p { margin: 0; font-size: 13px; line-height: 1.55; }
 .answer-options button:hover:not(:disabled), .answer-options button.selected { border-color: var(--accent); background: var(--accent-hover); }
 .answer-options button.correct { border-color: var(--practice-success); background: var(--practice-success-soft); }
 .answer-options button.wrong { border-color: var(--practice-danger); background: var(--practice-danger-soft); }
@@ -478,7 +517,7 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .feedback-score { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
 .feedback-score strong { color: var(--practice-success); font-size: 18px; }
 .answer-feedback.wrong .feedback-score strong { color: var(--practice-danger); }
-.feedback-score span, .answer-feedback p { color: var(--text-secondary); font-size: 10px; }
+.feedback-score span, .answer-feedback p { color: var(--text-secondary); font-size: 12px; }
 .answer-feedback p { margin: 5px 0; line-height: 1.6; }
 .answer-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 17px; }
 .answer-footer > span { color: var(--text-faint); font-size: 11px; }

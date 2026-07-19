@@ -53,6 +53,8 @@ public class AuthService {
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final PracticeQuestionRepository practiceQuestionRepository;
     private final LearningResourceFeedbackRepository learningResourceFeedbackRepository;
+    private final ResourceFavoriteRepository resourceFavoriteRepository;
+    private final ResourceCollectionRepository resourceCollectionRepository;
     private final PasswordEncoder passwordEncoder;
 
     /** 【Spring Boot】构造器注入 —— Spring 自动装配 JPA 仓库代理 */
@@ -71,6 +73,8 @@ public class AuthService {
                        KnowledgeChunkRepository knowledgeChunkRepository,
                        PracticeQuestionRepository practiceQuestionRepository,
                        LearningResourceFeedbackRepository learningResourceFeedbackRepository,
+                       ResourceFavoriteRepository resourceFavoriteRepository,
+                       ResourceCollectionRepository resourceCollectionRepository,
                        PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
@@ -87,6 +91,8 @@ public class AuthService {
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.practiceQuestionRepository = practiceQuestionRepository;
         this.learningResourceFeedbackRepository = learningResourceFeedbackRepository;
+        this.resourceFavoriteRepository = resourceFavoriteRepository;
+        this.resourceCollectionRepository = resourceCollectionRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -299,6 +305,8 @@ public class AuthService {
         knowledgeDocumentRepository.deleteByUserId(userId);
         practiceQuestionRepository.deleteByUserId(userId);
         learningResourceFeedbackRepository.deleteByUserId(userId);
+        resourceFavoriteRepository.deleteByUserId(userId);
+        resourceCollectionRepository.deleteByUserId(userId);
 
         // 删除用户账户
         userRepository.delete(user);

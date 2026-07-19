@@ -27,7 +27,8 @@ DIFFICULTY_RULES = {
 COURSE_TEMPLATES = {
     "programming": "优先使用代码阅读、运行结果、调试、API 选择、边界条件或小型实现题；代码必须可运行且语言明确",
     "database": "优先使用 SQL 结果、表结构设计、范式、索引、事务隔离或查询优化情境；给足表结构和数据前提",
-    "data_structure": "优先使用操作序列、复杂度比较、结构变化、算法跟踪或边界用例；明确输入规模和操作约束",
+    "data_structure": "必须考查真实数据结构知识，优先使用具体操作序列、结构状态变化、算法跟踪、复杂度边界、反例或不变量；明确下标起点、访问顺序、空/满条件等约定，禁止把学习方法、复盘步骤或验收标准当成专业题",
+    "computer_organization": "必须考查真实计组知识，优先使用数值表示、运算器、Cache 映射、指令执行、数据通路、流水线、控制信号、中断或 DMA 的可计算情境；明确字长、编址单位、映射方式、时序和舍入等必要前提，禁止缺少参数的猜测题",
     "mathematics": "优先使用计算、推导、性质辨析、反例或证明思路；符号定义完整，数值应可核算",
     "systems": "优先使用进程线程、调度、同步、内存、文件系统、指令执行或 Linux 命令情境；明确系统假设",
     "network": "优先使用协议交互、分层、地址与子网、报文分析、时序或故障定位；明确拓扑和协议条件",
@@ -37,14 +38,53 @@ COURSE_TEMPLATES = {
     "general": "围绕概念理解、实际应用、错误诊断和迁移设计题目，避免空泛的学习方法题",
 }
 
+SPECIALIZED_COURSE_RULES = {
+    "data_structure": """专业约束：
+1. 中高难度题至少给出一个可跟踪的操作序列、输入实例、伪代码片段、复杂度条件或边界场景；
+2. 涉及树/图遍历必须写明孩子或邻接点访问顺序，涉及数组必须写明下标约定；
+3. 复杂度题必须明确操作位置、数据结构表示和最坏/平均/均摊口径；
+4. 干扰项应对应把头尾混淆、忽略空结构、错算一次循环、破坏不变量等真实误区；
+5. 禁止考“如何学习、如何记录、如何验收”这类元学习内容。""",
+    "computer_organization": """专业约束：
+1. 数值题必须给全字长、符号表示、地址单位、Cache 参数、指令字段或时钟周期等必要条件；
+2. 涉及 Cache 必须说明直接/组相联/全相联、块大小和替换条件；涉及流水线必须说明级数、停顿与转发假设；
+3. 题目应要求计算、跟踪数据通路/控制信号、比较性能或诊断硬件执行过程；
+4. 干扰项应对应位数少算、字节/字混淆、命中位选择错误、CPI 与频率混淆等真实误区；
+5. 禁止考“如何学习、如何记录、如何验收”这类元学习内容。""",
+}
+
+SPECIALIZED_BLUEPRINTS = {
+    "data_structure": [
+        ("操作序列跟踪", "跟踪每一步操作后的结构状态", "混淆头尾或访问顺序"),
+        ("复杂度边界", "在给定表示和操作位置下计算时间复杂度", "忽略移动元素或遍历成本"),
+        ("结构不变量", "判断操作前后必须保持的不变量", "只看局部结果而破坏整体结构"),
+        ("算法手工执行", "对具体输入逐步执行算法并得到中间结果", "跳过关键迭代或更新次序错误"),
+        ("边界与反例", "构造空结构、单元素或极端输入验证结论", "把一般情况直接外推到边界"),
+        ("表示方案比较", "根据操作分布比较两种结构的代价", "脱离操作约束判断结构绝对优劣"),
+        ("错误诊断", "定位伪代码中破坏结构语义的步骤", "只修改输出而未修复根因"),
+        ("知识迁移", "把已知结构或算法应用到新的约束场景", "忽略新场景改变的前提"),
+    ],
+    "computer_organization": [
+        ("位级表示计算", "在给定字长和编码规则下计算机器表示", "混淆真值、补码和无符号解释"),
+        ("运算器过程", "跟踪 ALU 或移位加减运算的中间状态", "忽略溢出和符号扩展"),
+        ("Cache 地址映射", "拆分地址并判断块号、组号与命中状态", "混淆字节偏移、组索引和标记"),
+        ("指令执行跟踪", "按取指译码执行流程判断寄存器和存储器变化", "遗漏寻址或写回阶段"),
+        ("数据通路与控制", "判断完成指定指令所需的数据通路和控制信号", "启用错误写使能或多路选择"),
+        ("流水线时序", "计算停顿、转发条件、CPI 或总周期", "把指令数直接等同于周期数"),
+        ("中断与 DMA", "比较外设传输方式并跟踪 CPU 参与时机", "混淆中断响应与数据搬运主体"),
+        ("性能权衡", "依据执行时间公式比较体系结构方案", "只比较频率而忽略 CPI 和指令数"),
+    ],
+}
+
 
 def _call(client, system_prompt: str, user_prompt: str) -> str:
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    response = client.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt),
-    ])
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+    except ModuleNotFoundError:
+        # 允许纯规则单元测试在不安装 LangChain 的轻量环境中运行；生产依赖仍由 requirements 提供。
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    response = client.invoke(messages)
     return response.content
 
 
@@ -75,11 +115,12 @@ def infer_course_family(text: str) -> str:
     lowered = text.lower()
     groups = [
         ("database", ["数据库", "sql", "mysql", "事务", "索引", "javaee", "jpa"]),
-        ("data_structure", ["数据结构", "算法", "链表", "树", "图论", "排序", "复杂度"]),
+        ("data_structure", ["数据结构", "算法", "链表", "队列", "二叉树", "图论", "排序", "复杂度", "哈希", "堆"]),
+        ("computer_organization", ["计算机组成", "组成原理", "运算器", "alu", "cache", "指令系统", "数据通路", "流水线", "控制器", "中断", "dma"]),
         ("mathematics", ["离散数学", "线性代数", "概率", "数理统计", "矩阵", "微积分", "集合", "数理逻辑"]),
         ("network", ["计算机网络", "tcp", "udp", "http", "子网", "路由", "协议"]),
         ("compiler", ["编译原理", "词法", "语法分析", "文法", "中间代码"]),
-        ("systems", ["操作系统", "linux", "计算机组成", "进程", "线程", "内存", "指令", "文件系统"]),
+        ("systems", ["操作系统", "linux", "进程", "线程", "虚拟内存", "文件系统"]),
         ("mobile_game", ["移动应用", "android", "ios", "游戏软件", "unity", "渲染", "生命周期"]),
         ("software_engineering", ["软件工程", "需求", "uml", "架构", "设计模式", "测试", "git", "项目管理"]),
         ("programming", ["c++", "c语言", "java", "python", "编程", "程序", "代码", "函数", "类", "指针"]),
@@ -114,6 +155,7 @@ def _local_blueprints(count: int, question_type: str, difficulty: str,
         "programming": ["代码阅读", "错误诊断", "边界应用"],
         "database": ["查询分析", "设计判断", "事务情境"],
         "data_structure": ["过程跟踪", "复杂度分析", "边界用例"],
+        "computer_organization": ["位级计算", "执行过程", "性能分析"],
         "mathematics": ["性质辨析", "计算推导", "反例分析"],
         "systems": ["执行过程", "故障定位", "方案权衡"],
         "network": ["协议时序", "报文分析", "故障定位"],
@@ -123,12 +165,25 @@ def _local_blueprints(count: int, question_type: str, difficulty: str,
         "general": ["概念理解", "实际应用", "错误诊断"],
     }
     levels = {"EASY": "理解", "MEDIUM": "应用", "HARD": "分析与评价"}
+    specialized = SPECIALIZED_BLUEPRINTS.get(family, [])
     return [{
-        "knowledgePoint": task_title[:120],
-        "learningObjective": f"能够通过{methods[family][index % 3]}掌握{task_title}"[:240],
+        "knowledgePoint": (
+            f"{task_title[:72]}·{specialized[index % len(specialized)][0]}"
+            if specialized else task_title[:120]
+        ),
+        "learningObjective": (
+            specialized[index % len(specialized)][1]
+            if specialized else f"能够通过{methods[family][index % 3]}掌握{task_title}"
+        )[:240],
         "cognitiveLevel": levels[difficulty],
-        "misconception": "只记结论而忽略适用条件",
-        "assessmentMethod": methods[family][index % 3],
+        "misconception": (
+            specialized[index % len(specialized)][2]
+            if specialized else "只记结论而忽略适用条件"
+        ),
+        "assessmentMethod": (
+            specialized[index % len(specialized)][0]
+            if specialized else methods[family][index % 3]
+        ),
         "questionType": question_type,
         "difficulty": difficulty,
         "sourceChunkIds": source_ids[:3],
@@ -142,7 +197,8 @@ def _build_blueprints(req, count: int, question_type: str, difficulty: str,
         count, question_type, difficulty, req.task_title, family, sorted(allowed_ids))
     # 默认使用稳定、零延迟的规则蓝图，把模型预算留给命题和独立审核。
     # 需要实验 LLM 蓝图时可显式开启，但不影响后续蓝图字段和校验协议。
-    if os.getenv("QUESTION_LLM_BLUEPRINT_ENABLED", "false").lower() != "true":
+    if (family not in SPECIALIZED_COURSE_RULES
+            and os.getenv("QUESTION_LLM_BLUEPRINT_ENABLED", "false").lower() != "true"):
         return fallback
     grounding_rule = (
         "知识库内容非空，知识点、结论和 sourceChunkIds 必须能从知识库直接得到；不得补造资料中没有的事实。"
@@ -153,6 +209,7 @@ def _build_blueprints(req, count: int, question_type: str, difficulty: str,
 小任务：{req.task_title}
 课程类别：{family}
 课程出题模板：{COURSE_TEMPLATES[family]}
+{SPECIALIZED_COURSE_RULES.get(family, '')}
 题型：{question_type}；{QUESTION_TYPE_RULES[question_type]}
 难度：{difficulty}；{DIFFICULTY_RULES[difficulty]}
 学生基础：{profile.get('knowledgeBase', 5)}/10
@@ -166,7 +223,7 @@ def _build_blueprints(req, count: int, question_type: str, difficulty: str,
     try:
         items = _json_items(_call(
             reviewer,
-            "你是软件工程专业课程的测评设计师。先建立可验证的测评蓝图，再允许出题。",
+            "你是计算机专业课程的测评设计师。先建立可验证、可计算、覆盖真实误区的测评蓝图，再允许出题。",
             prompt,
         ), "blueprints")
         normalized: list[dict] = []
@@ -306,6 +363,35 @@ def normalize_candidate(item: dict, question_type: str, allowed_ids: set[int],
     }
 
 
+def specialized_quality_issues(candidate: dict, family: str, difficulty: str) -> list[str]:
+    """Apply deterministic course checks before an expensive blind review."""
+    if family not in SPECIALIZED_COURSE_RULES:
+        return []
+    question = str(candidate.get("question", ""))
+    explanation = str(candidate.get("explanation", ""))
+    options = [str(value) for value in candidate.get("options", [])]
+    combined = f"{question} {candidate.get('knowledgePoint', '')}".lower()
+    issues: list[str] = []
+    meta_phrases = ["学习证据", "如何学习", "学习方法", "复盘改进", "验收标准", "只需记忆结论"]
+    if any(phrase in combined for phrase in meta_phrases):
+        issues.append("meta_learning_instead_of_domain_knowledge")
+    if len(explanation) < 24:
+        issues.append("explanation_too_short")
+    if any(re.search(r"以上(?:都|均)|无法确定|视情况而定", option) for option in options):
+        issues.append("ambiguous_catch_all_option")
+    domain_tokens = {
+        "data_structure": ["链表", "栈", "队列", "树", "图", "排序", "查找", "哈希", "复杂度", "数组", "堆", "指针", "结点", "遍历"],
+        "computer_organization": ["补码", "浮点", "alu", "cache", "主存", "地址", "指令", "寄存器", "流水线", "cpi", "控制信号", "中断", "dma", "时钟"],
+    }[family]
+    if not any(token in combined for token in domain_tokens):
+        issues.append("missing_course_concept")
+    if difficulty in {"MEDIUM", "HARD"}:
+        concrete_markers = [r"\d", r"序列", r"伪代码", r"复杂度", r"最坏", r"平均", r"执行后", r"周期", r"命中", r"映射", r"控制信号", r"地址"]
+        if not any(re.search(marker, combined) for marker in concrete_markers):
+            issues.append("missing_concrete_reasoning_context")
+    return issues
+
+
 def _stem_key(question: str) -> str:
     return _content_key(question)
 
@@ -356,6 +442,7 @@ def _generate_candidates(req, blueprints: list[dict], question_type: str,
     prompt = f"""根据以下蓝图逐项生成候选题，每个蓝图生成且只生成一道题。
 课程类别：{family}
 课程模板：{COURSE_TEMPLATES[family]}
+{SPECIALIZED_COURSE_RULES.get(family, '')}
 本周主题：{req.week_topic}
 小任务：{req.task_title}
 题型规则：{QUESTION_TYPE_RULES[question_type]}
@@ -378,7 +465,7 @@ def _generate_candidates(req, blueprints: list[dict], question_type: str,
     for index, item in enumerate(items):
         blueprint = blueprints[min(index, len(blueprints) - 1)]
         candidate = normalize_candidate(item, question_type, allowed_ids, blueprint, bool(context))
-        if candidate:
+        if candidate and not specialized_quality_issues(candidate, family, difficulty):
             normalized.append(candidate)
     return deduplicate(normalized, len(blueprints), blocked)
 
@@ -386,7 +473,8 @@ def _generate_candidates(req, blueprints: list[dict], question_type: str,
 def _review_candidates(req, candidates: list[dict], count: int,
                        question_type: str, difficulty: str, context: str,
                        allowed_ids: set[int], reviewer,
-                       blocked: list[dict] | None = None) -> list[dict]:
+                       blocked: list[dict] | None = None,
+                       family: str = "general") -> list[dict]:
     # 隐藏生成器给出的答案和解析，让审核智能体先独立作答，避免照抄原答案。
     audit_items = [{
         "candidateIndex": index,
@@ -397,6 +485,7 @@ def _review_candidates(req, candidates: list[dict], count: int,
     } for index, item in enumerate(candidates)]
     prompt = f"""请对以下候选题进行盲审：你看不到命题者给出的答案，必须独立求解后判断是否可用。
 审核维度：与周主题和小任务直接相关；符合题型和难度；题目必须自包含，不得用“资料1、资料3、上述材料、给定文档”等用户不可见的检索标签代替事实；答案唯一且可由题干和知识库证明；有知识库时事实和 sourceChunkIds 均可追溯；选项不得复述题干；不同题目不得复用相同或高度重合的选项集合。
+课程专用审核：{SPECIALIZED_COURSE_RULES.get(family, '按通用计算机课程标准审核。')}
 题型规则：{QUESTION_TYPE_RULES[question_type]}
 难度规则：{DIFFICULTY_RULES[difficulty]}
 周主题：{req.week_topic}
@@ -415,7 +504,9 @@ def _review_candidates(req, candidates: list[dict], count: int,
         index = _safe_int(audit.get("candidateIndex"), -1)
         if index < 0 or index >= len(candidates):
             continue
-        if str(audit.get("verdict", "")).upper() != "PASS" or _safe_int(audit.get("confidence"), 0) < 65:
+        confidence_floor = 75 if family in SPECIALIZED_COURSE_RULES else 65
+        if (str(audit.get("verdict", "")).upper() != "PASS"
+                or _safe_int(audit.get("confidence"), 0) < confidence_floor):
             continue
         candidate = candidates[index]
         proposed = str(audit.get("verifiedAnswer", "")).strip()
@@ -467,7 +558,7 @@ def generate_questions_pipeline(req, generator, reviewer) -> list[dict]:
         try:
             reviewed = _review_candidates(
                 req, candidates, count, question_type, difficulty,
-                context, allowed_ids, reviewer, blocked)
+                context, allowed_ids, reviewer, blocked, family)
         except Exception as exc:
             logger.warning("候选题审核失败，使用已通过规则校验的候选题: %s", exc)
             reviewed = None

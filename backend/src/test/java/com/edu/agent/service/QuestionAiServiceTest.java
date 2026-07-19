@@ -39,6 +39,8 @@ class QuestionAiServiceTest {
                 "{}", "数据结构", "理解链表插入", "SINGLE_CHOICE", "MEDIUM", 10);
 
         assertThat(questions).hasSize(10);
+        assertThat(questions.get(0).question()).contains("顺序表").doesNotContain("学习证据");
+        assertThat(questions.get(1).question()).contains("单链表").doesNotContain("学习证据");
         for (int left = 0; left < questions.size(); left++) {
             assertThat(service.hasQuestionOptionConflict(
                     questions.get(left).question(), questions.get(left).options())).isFalse();
@@ -46,6 +48,18 @@ class QuestionAiServiceTest {
                 assertThat(service.isDuplicateQuestion(questions.get(left), questions.get(right))).isFalse();
             }
         }
+    }
+
+    @Test
+    void computerOrganizationFallbackUsesComputableProfessionalQuestions() {
+        List<QuestionAiService.GeneratedQuestion> questions = service.generate(
+                "{}", "计算机组成原理", "补码与 Cache 地址映射", "SINGLE_CHOICE", "MEDIUM", 3);
+
+        assertThat(questions).hasSize(3);
+        assertThat(questions.get(0).question()).contains("8 位补码");
+        assertThat(questions.get(1).question()).contains("直接映射 Cache");
+        assertThat(questions.subList(0, 2)).allSatisfy(question ->
+                assertThat(question.explanation()).hasSizeGreaterThan(25));
     }
 
     @Test

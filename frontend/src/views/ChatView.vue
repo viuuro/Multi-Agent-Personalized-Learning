@@ -249,7 +249,7 @@
           </transition>
           <!-- 隐藏的文件选择器 -->
           <input ref="imageInputRef" type="file" accept="image/*" style="display:none" @change="onImageSelected" />
-          <input ref="fileInputRef" type="file" accept=".pdf,.docx,.txt" style="display:none" @change="onFileSelected" />
+          <input ref="fileInputRef" type="file" accept=".pdf,.docx,.txt,.md" style="display:none" @change="onFileSelected" />
         </div>
       </div>
     </div>
@@ -275,6 +275,11 @@
           <span>第 {{ task.weekNumber }} 周 · {{ task.topic }}</span>
           <strong>{{ task.title }}</strong>
         </button>
+      </div>
+      <div class="submission-file-support" role="note" aria-label="成果文件要求">
+        <span>支持格式</span>
+        <strong>PDF · DOCX · TXT · MD</strong>
+        <span>单个文件最大 10 MB</span>
       </div>
       <div class="acct-footer submission-task-footer">
         <el-button size="large" class="cancel-btn" @click="showSubmissionTaskDialog = false">取消</el-button>
@@ -692,9 +697,8 @@ function onFileSelected(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('仅支持 PDF、Word (.docx)、TXT 文件'); return }
+  const validationError = validateDocumentFile(file)
+  if (validationError) { alert(validationError); return }
   clearStagedFile()
   stagedFile.value = { file, name: file.name, size: formatFileSize(file.size) }
 }
@@ -728,7 +732,8 @@ async function handleSubmissionFileSelected(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  if (file.size > 10 * 1024 * 1024) { alert('文件大小不能超过 10MB'); return }
+  const validationError = validateDocumentFile(file)
+  if (validationError) { alert(validationError); return }
 
   const runId = ++submissionRunId
   submitting.value = true
@@ -793,6 +798,13 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function validateDocumentFile(file: File): string | null {
+  if (file.size > 10 * 1024 * 1024) return '文件大小不能超过 10MB'
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  if (!['pdf', 'docx', 'txt', 'md'].includes(ext)) return '仅支持 PDF、Word (.docx)、TXT、Markdown (.md) 文件'
+  return null
 }
 
 function scrollToBottom() {
@@ -1923,6 +1935,9 @@ watch(sidebarOpen, value => {
 .edit-modal-footer .el-button:last-child:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: transparent !important; }
 .submission-task-tip { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
 .submission-task-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+.submission-file-support { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; padding: 9px 11px; border: 1px solid var(--border-solid); border-radius: 10px; background: var(--bg-input); color: var(--text-faint); font-size: 12px; line-height: 1.4; }
+.submission-file-support strong { color: var(--text-secondary); font-weight: 650; letter-spacing: .02em; }
+.submission-file-support span:last-child { margin-left: auto; }
 .submission-task-option { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 11px 13px; border: 1px solid var(--border-solid); border-radius: 12px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; text-align: left; }
 .submission-task-option span { color: var(--text-faint); font-size: 11px; }
 .submission-task-option strong { font-size: 13px; line-height: 1.5; font-weight: 600; }

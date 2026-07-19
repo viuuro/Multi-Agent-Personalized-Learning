@@ -57,7 +57,8 @@
             <h4>本周任务</h4>
             <ul class="task-list">
               <li v-for="(task, i) in week.tasks" :key="i">
-                <UiIcon name="check" />
+                <UiIcon v-if="isTaskCompleted(week.weekNumber, i)" name="check" aria-label="已完成" />
+                <span v-else class="task-open-circle" role="img" aria-label="未完成"></span>
                 {{ task }}
               </li>
             </ul>
@@ -103,7 +104,8 @@
             <h4>本周任务</h4>
             <ul class="task-list">
               <li v-for="(task, i) in week.tasks" :key="i">
-                <UiIcon name="check" />
+                <UiIcon v-if="isTaskCompleted(week.weekNumber, i)" name="check" aria-label="已完成" />
+                <span v-else class="task-open-circle" role="img" aria-label="未完成"></span>
                 {{ task }}
               </li>
             </ul>
@@ -134,9 +136,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { fetchPlan, recordResourceFeedbackApi, savePlanApi } from '../services/api'
-import type { LearningPlan, ResourceFeedbackEvent, ResourceItem } from '../services/api'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { fetchPlan, fetchPlanTaskStatusesApi, recordResourceFeedbackApi, savePlanApi } from '../services/api'
+import type { LearningPlan, LearningTaskStatus, ResourceFeedbackEvent, ResourceItem } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { useChatStore } from '../stores/chatStore'
 import UiIcon from './UiIcon.vue'
@@ -159,16 +161,51 @@ const internalPlan = ref<LearningPlan | null>(null)
 const loading = ref(false)
 const editing = ref(false)
 const editablePlan = ref<LearningPlan | null>(null)
+const taskStatuses = ref<Record<string, LearningTaskStatus>>({})
 
 const hasPlan = computed(() => plan.value !== null)
 
 function setPlan(newPlan: LearningPlan | null) {
   internalPlan.value = newPlan ? JSON.parse(JSON.stringify(newPlan)) : null
+  void refreshTaskStatuses()
 }
 
 onMounted(() => {
   if (props.initialEditing) startEdit()
+  window.addEventListener('learning-activity-updated', refreshTaskStatuses)
+  void refreshTaskStatuses()
 })
+
+onUnmounted(() => {
+  window.removeEventListener('learning-activity-updated', refreshTaskStatuses)
+})
+
+function taskStatusKey(weekNumber: number, taskIndex: number) {
+  return `${weekNumber}-${taskIndex}`
+}
+
+function isTaskCompleted(weekNumber: number, taskIndex: number) {
+  return taskStatuses.value[taskStatusKey(weekNumber, taskIndex)] === 'COMPLETED'
+}
+
+async function refreshTaskStatuses() {
+  const userId = authStore.user?.id
+  const conversationId = chatStore.conversationId
+  if (!userId || !conversationId || !plan.value) {
+    taskStatuses.value = {}
+    return
+  }
+  try {
+    const statuses = await fetchPlanTaskStatusesApi(userId, conversationId)
+    if (chatStore.conversationId !== conversationId) return
+    taskStatuses.value = Object.fromEntries(
+      statuses.map(item => [taskStatusKey(item.weekNumber, item.taskIndex), item.status])
+    )
+  } catch (error) {
+    console.warn('任务完成状态加载失败:', error)
+    taskStatuses.value = {}
+  }
+}
 
 async function generatePlan() {
   loading.value = true
@@ -177,6 +214,7 @@ async function generatePlan() {
     const conversationId = chatStore.conversationId
     if (!userId || !conversationId) throw new Error('未登录或当前对话未初始化')
     internalPlan.value = await fetchPlan(userId, conversationId)
+    await refreshTaskStatuses()
   } catch (err) {
     console.error('计划生成失败:', err)
   } finally {
@@ -198,6 +236,7 @@ async function saveEdit() {
     if (userId && conversationId) {
       try {
         await savePlanApi(userId, conversationId, internalPlan.value)
+        await refreshTaskStatuses()
       } catch (e) {
         console.warn('计划保存失败:', e)
       }
@@ -435,6 +474,16 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   height: 14px;
   color: var(--success);
   margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.task-open-circle {
+  width: 12px;
+  height: 12px;
+  margin: 3px 1px 0;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 50%;
+  box-sizing: border-box;
   flex-shrink: 0;
 }
 

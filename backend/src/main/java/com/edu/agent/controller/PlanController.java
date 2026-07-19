@@ -4,6 +4,7 @@ import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.LearningPlan;
 import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.repository.LearningPlanRepository;
+import com.edu.agent.repository.TaskRepository;
 import com.edu.agent.service.AgentOrchestrationService;
 import com.edu.agent.service.LearningPlanVersionService;
 import com.edu.agent.service.RequestRateLimiter;
@@ -33,17 +34,20 @@ public class PlanController {
 
     private final AgentOrchestrationService orchestrationService;
     private final LearningPlanRepository planRepository;
+    private final TaskRepository taskRepository;
     private final LearningPlanVersionService planVersionService;
     private final RequestRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
 
     public PlanController(AgentOrchestrationService orchestrationService,
                           LearningPlanRepository planRepository,
+                          TaskRepository taskRepository,
                           LearningPlanVersionService planVersionService,
                           RequestRateLimiter rateLimiter,
                           ObjectMapper objectMapper) {
         this.orchestrationService = orchestrationService;
         this.planRepository = planRepository;
+        this.taskRepository = taskRepository;
         this.planVersionService = planVersionService;
         this.rateLimiter = rateLimiter;
         this.objectMapper = objectMapper;
@@ -104,6 +108,29 @@ public class PlanController {
             }
         }
         return ApiResponse.success("ok", null);
+    }
+
+    /** 读取当前计划版本中各任务的真实完成状态。 */
+    @GetMapping("/plan/task-statuses")
+    public ApiResponse<List<Map<String, Object>>> getTaskStatuses(
+            @RequestParam(required = false) Long userId,
+            Authentication authentication,
+            @RequestParam String conversationId) {
+        userId = CurrentUser.id(authentication);
+        Optional<LearningPlanEntity> currentPlan = planVersionService.getCurrentEntity(userId, conversationId);
+        if (currentPlan.isEmpty()) {
+            return ApiResponse.success("ok", List.of());
+        }
+        List<Map<String, Object>> statuses = taskRepository
+                .findByUserIdAndPlanId(userId, currentPlan.get().getId())
+                .stream()
+                .filter(task -> task.getWeekNumber() != null && task.getTaskIndex() != null)
+                .map(task -> Map.<String, Object>of(
+                        "weekNumber", task.getWeekNumber(),
+                        "taskIndex", task.getTaskIndex(),
+                        "status", task.getStatus()))
+                .toList();
+        return ApiResponse.success("ok", statuses);
     }
 
     /** 保存用户编辑后的计划 */

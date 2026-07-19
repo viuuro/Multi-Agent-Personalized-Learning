@@ -21,6 +21,8 @@ except ModuleNotFoundError:
 
 import voice_clone_demo
 
+VALID_WAV = b"RIFF\x04\x00\x00\x00WAVEdata"
+
 
 class VoiceCloneDemoTest(unittest.TestCase):
     def test_build_reference_audio_data_url_for_mp3(self) -> None:
@@ -59,7 +61,7 @@ class VoiceCloneDemoTest(unittest.TestCase):
             choices=[
                 SimpleNamespace(
                     message=SimpleNamespace(
-                        audio=SimpleNamespace(data=base64.b64encode(b"RIFF-result").decode())
+                        audio=SimpleNamespace(data=base64.b64encode(VALID_WAV).decode())
                     )
                 )
             ]
@@ -89,8 +91,8 @@ class VoiceCloneDemoTest(unittest.TestCase):
                     "温柔地说",
                 )
 
-        self.assertEqual(b"RIFF-result", result)
-        self.assertEqual(b"RIFF-result", second_result)
+        self.assertEqual(VALID_WAV, result)
+        self.assertEqual(VALID_WAV, second_result)
         openai_class.assert_called_once()
         self.assertEqual(2, create.call_count)
         request = create.call_args_list[0].kwargs
@@ -99,6 +101,16 @@ class VoiceCloneDemoTest(unittest.TestCase):
         self.assertEqual("温柔地说", request["messages"][0]["content"])
         self.assertEqual("测试文本", request["messages"][1]["content"])
         self.assertEqual("wav", request["audio"]["format"])
+
+    def test_rejects_non_wav_response_bytes(self) -> None:
+        completion = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                audio=SimpleNamespace(data=base64.b64encode(b"not-a-wave").decode())
+            ))]
+        )
+
+        with self.assertRaisesRegex(voice_clone_demo.VoiceCloneError, "WAV"):
+            voice_clone_demo.extract_audio_bytes(completion)
 
 
 if __name__ == "__main__":

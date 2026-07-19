@@ -6,6 +6,7 @@ import com.edu.agent.service.ConversationSessionService;
 import com.edu.agent.service.LearningPlanVersionService;
 import com.edu.agent.service.ProfileService;
 import com.edu.agent.service.SubmissionService;
+import com.edu.agent.repository.TaskRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "spring.datasource.url=jdbc:h2:mem:application-context;MODE=MYSQL;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.datasource.username=sa",
+                "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "ai.mock-enabled=true"
         })
@@ -27,6 +31,7 @@ class ApplicationContextTest {
     @Autowired private SubmissionService submissionService;
     @Autowired private ConversationSessionService conversationSessionService;
     @Autowired private ProfileService profileService;
+    @Autowired private TaskRepository taskRepository;
 
     @Test
     void contextLoadsWithIntelligencePipeline() {
@@ -58,6 +63,11 @@ class ApplicationContextTest {
         assertThat(detail).isNotNull();
         assertThat(detail.getStatus()).isEqualTo("EVALUATED");
         assertThat(detail.getEvaluation().getWeaknessesJson()).contains("实践验证不足");
+        Long planId = planVersionService.getCurrentEntity(userId, conversationId).orElseThrow().getId();
+        assertThat(taskRepository.findByUserIdAndPlanId(userId, planId))
+                .singleElement()
+                .extracting(task -> task.getStatus())
+                .isEqualTo("COMPLETED");
         assertThat(conversationSessionService.findSession(userId, conversationId).orElseThrow()
                 .getTemporaryStateJson()).contains("lastSubmissionScore");
         assertThat(profileService.getCurrentProfile(userId, conversationId).getWeaknessPoints())

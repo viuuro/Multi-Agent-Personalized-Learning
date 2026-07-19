@@ -61,6 +61,14 @@ export interface LearningPlan {
   weeks: LearningPlanWeek[]
 }
 
+export type LearningTaskStatus = 'PENDING' | 'COMPLETED'
+
+export interface LearningTaskStatusItem {
+  weekNumber: number
+  taskIndex: number
+  status: LearningTaskStatus
+}
+
 export type PracticeQuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER'
 export type PracticeDifficulty = 'EASY' | 'MEDIUM' | 'HARD'
 export type PracticeQuestionStatus = 'UNANSWERED' | 'DRAFT' | 'SUBMITTED'
@@ -255,6 +263,17 @@ export async function fetchSavedPlanApi(userId: number, conversationId: string):
     `/plan?userId=${userId}&conversationId=${encodeURIComponent(conversationId)}`
   )
   return res.data
+}
+
+/** GET /api/plan/task-statuses —— 获取当前计划版本中各任务的真实完成状态 */
+export async function fetchPlanTaskStatusesApi(
+  userId: number,
+  conversationId: string
+): Promise<LearningTaskStatusItem[]> {
+  const res = await request<LearningTaskStatusItem[]>(
+    `/plan/task-statuses?userId=${userId}&conversationId=${encodeURIComponent(conversationId)}`
+  )
+  return res.data || []
 }
 
 /**

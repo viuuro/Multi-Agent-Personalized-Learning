@@ -364,6 +364,7 @@ public class SubmissionService {
             }
 
             // 最后发布完成状态：轮询方一旦看到 EVALUATED，画像与会话记忆也已回写完毕。
+            markTaskCompleted(submission);
             submission.setStatus(TaskSubmission.STATUS_EVALUATED);
             submission.setProcessingStartedAt(null);
             submissionRepository.save(submission);
@@ -610,6 +611,20 @@ public class SubmissionService {
     /** 后端重启后继续处理已经落库但尚未完成的评分任务。 */
     @EventListener(ApplicationReadyEvent.class)
     public void resumePendingEvaluations() {
+        int synchronizedTasks = 0;
+        for (TaskSubmission evaluated : submissionRepository.findByStatus(TaskSubmission.STATUS_EVALUATED)) {
+            Task task = taskRepository.findByIdAndUserId(evaluated.getTaskId(), evaluated.getUserId())
+                    .orElse(null);
+            if (task != null && !"COMPLETED".equals(task.getStatus())) {
+                task.setStatus("COMPLETED");
+                taskRepository.save(task);
+                synchronizedTasks++;
+            }
+        }
+        if (synchronizedTasks > 0) {
+            log.info(">>> 已同步 {} 个历史成果对应的任务完成状态", synchronizedTasks);
+        }
+
         int recovered = submissionRepository.resetStaleRunning(
                 TaskSubmission.STATUS_RUNNING, TaskSubmission.STATUS_PENDING,
                 LocalDateTime.now().minusMinutes(3));
@@ -621,6 +636,7 @@ public class SubmissionService {
         }
         for (TaskSubmission submission : pending) {
             if (evaluationRepository.findBySubmissionId(submission.getId()).isPresent()) {
+                markTaskCompleted(submission);
                 submission.setStatus(TaskSubmission.STATUS_EVALUATED);
                 submissionRepository.save(submission);
                 continue;
@@ -634,6 +650,15 @@ public class SubmissionService {
                                 submission.setErrorMessage("关联任务不存在，无法恢复评分");
                                 submissionRepository.save(submission);
                             });
+        }
+    }
+
+    private void markTaskCompleted(TaskSubmission submission) {
+        Task task = taskRepository.findByIdAndUserId(submission.getTaskId(), submission.getUserId())
+                .orElseThrow(() -> new IllegalStateException("成果关联的学习任务不存在"));
+        if (!"COMPLETED".equals(task.getStatus())) {
+            task.setStatus("COMPLETED");
+            taskRepository.save(task);
         }
     }
 

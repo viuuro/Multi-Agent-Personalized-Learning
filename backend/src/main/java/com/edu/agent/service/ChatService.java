@@ -6,10 +6,12 @@ import com.edu.agent.model.LearningPlanEntity;
 import com.edu.agent.model.UserProfile;
 import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.repository.LearningPlanRepository;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -26,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * 聊天服务 —— 处理对话消息并实现 SSE 流式输出
@@ -127,7 +130,7 @@ public class ChatService {
      *   2. 保存用户消息到 MySQL
      *   3. 调用 Python AI 提取画像 + 生成回复（或使用 Mock）
      *   4. 更新用户画像到 MySQL
-     *   5. 创建 SSE 长连接，逐字符推送 AI 回复
+     *   5. 创建 SSE 长连接，逐块桥接 Python/MiMo 原生流式回复
      *   6. 推送画像更新通知
      *   7. 保存 AI 回复到 MySQL
      *
@@ -142,196 +145,178 @@ public class ChatService {
                                  String attachmentName,
                                  String attachmentType,
                                  Long userId) {
-        // Step 1: 生成会话 ID（如果前端未提供）
         if (conversationId == null || conversationId.isBlank()) {
             conversationId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         }
         final String convId = conversationId;
-        // 创建 SSE 发射器（0L = 不设置超时，由后端控制完成时机）
         SseEmitter emitter = new SseEmitter(0L);
-
-        // Step 2: 保存用户消息到数据库。文件解析全文只写入 aiContent，不污染历史对话展示。
-        if (userId != null) {
-            conversationSessionService.ensureSession(userId, convId);
-        }
-        String visibleMessage = displayMessage == null || displayMessage.isBlank()
-                ? userMessage : displayMessage;
-        Conversation userRecord = saveMessage(visibleMessage, userMessage, "user", convId, userId,
-                attachmentName, attachmentType,
-                "image".equals(attachmentType) ? imageData : null);
-
-        // Step 3: 提取画像 + 生成回复
-        UserProfile extractedProfile;
-        String fullResponse;
-        String planAction = "none";
-        String planRevisionRequest = userMessage;
-        String revisionScopeJson = "{}";
-        Map<String, Object> result;
-        if (mockMode) {
-            // Mock 模式：使用预设数据
-            extractedProfile = mockAiService.mockProfileExtraction(userMessage);
-            fullResponse = mockAiService.mockChatResponse(userMessage, extractedProfile);
-            planAction = detectPlanAction(userMessage);
-            result = buildMockDecisionResult(userMessage, convId, planAction, fullResponse);
-        } else {
-            // 真实模式：调用 Python AI 服务（FastAPI + LangChain → MiMo-v2.5 API）
-            result = callPythonChat(userMessage, imageData, userId, convId);
-            fullResponse = String.valueOf(result.getOrDefault("response", ""));
-            String profileJson = String.valueOf(result.getOrDefault("profile_json", "{}"));
-            planAction = String.valueOf(result.getOrDefault("plan_action", "none"));
-            planRevisionRequest = String.valueOf(result.getOrDefault(
-                    "plan_revision_request", userMessage));
-            revisionScopeJson = String.valueOf(result.getOrDefault("revision_scope_json", "{}"));
-            // 将 Python 返回的 JSON 解析为 UserProfile 对象
-            extractedProfile = profileService.parseProfileJson(profileJson);
-        }
-
-        // Step 4: 更新用户画像到 MySQL
-        String evidenceJson = String.valueOf(result.getOrDefault("profile_evidence_json", "[]"));
-        java.util.Set<String> supportedDimensions = profileEvidenceService.persist(
-                userId, convId, userRecord == null ? null : userRecord.getId(), evidenceJson);
-        UserProfile savedProfile = mockMode
-                ? profileService.updateProfile(extractedProfile, userId, convId)
-                : profileService.updateProfileWithSupportedDimensions(
-                        extractedProfile, userId, convId, supportedDimensions);
-        persistIntelligenceState(userId, convId,
-                userRecord == null ? null : userRecord.getId(), result);
-
-        // Step 5-7: 在新线程中执行 SSE 流式推送（避免阻塞主线程）
-        final String finalResponse = fullResponse;
-        final String finalPlanAction = planAction;
-        final String finalPlanRevisionRequest = planRevisionRequest;
-        final String finalRevisionScopeJson = revisionScopeJson;
-        new Thread(() -> {
-            try {
-                // Step 5a: 推送会话 ID（前端用于关联后续消息）
-                sendSSE(emitter, "conversation_id", convId);
-                // Step 5b: 逐字符推送 AI 回复（实现打字机效果）
-                // 使用 codePointAt() 正确处理 Unicode 字符（包括 emoji）
-                int len = finalResponse.length();
-                for (int i = 0; i < len; ) {
-                    int cp = finalResponse.codePointAt(i);  // 获取 Unicode 码点
-                    sendSSE(emitter, "content", new String(Character.toChars(cp)));
-                    i += Character.charCount(cp);  // 跳过当前字符（可能是 1 或 2 个 char）
-                    Thread.sleep(15);  // 每个字符间隔 15ms，模拟打字速度
-                }
-
-                // Step 6: 推送画像更新通知（前端用于更新雷达图）
-                String profileJson = savedProfile.getProfileJson();
-                sendSSE(emitter, "profile_update", profileJson);
-
-                // 用户在对话中明确要求修订计划时，直接生成、持久化并推送新计划。
-                if (isPlanAction(finalPlanAction)) {
-                    LearningPlan updatedPlan = regenerateAndPersistPlan(
-                            userId, convId, finalPlanRevisionRequest,
-                            finalPlanAction, finalRevisionScopeJson);
-                    sendSSE(emitter, "plan_update", objectMapper.writeValueAsString(updatedPlan));
-                }
-
-                // Step 7b: 保存 AI 回复到 MySQL
-                saveMessage(finalResponse, finalResponse, "assistant", convId, userId,
-                        null, null, null);
-                // Step 7a: 推送完成信号（前端用于结束流式状态）
-                sendSSE(emitter, "done", "");
-                // 关闭 SSE 连接
-                emitter.complete();
-            } catch (IOException | InterruptedException e) {
-                log.error("SSE 流输出异常: {}", e.getMessage());
-                emitter.completeWithError(e);
-            }
-        }).start();
-
+        Thread worker = new Thread(() -> streamChat(
+                emitter, userMessage, displayMessage, convId, imageData,
+                attachmentName, attachmentType, userId), "chat-sse-" + convId);
+        worker.start();
         return emitter;
     }
 
-    // ===== Python AI 调用 =====
-
-    /**
-     * 调用 Python AI 服务的 /chat 端点
-     *
-     * 发送用户消息和当前画像给 Python 服务，
-     * Python 服务使用 LangChain 调用 MiMo-v2.5 API 提取画像并生成回复。
-     *
-     * @param userMessage 用户输入的消息
-     * @return Map { "response": AI回复, "profile_json": 更新后的画像JSON }
-     */
-    private Map<String, Object> callPythonChat(String userMessage, String imageData, Long userId,
-                                                String conversationId) {
+    /** Execute storage, Python token bridging and completion work after the HTTP SSE response is open. */
+    private void streamChat(SseEmitter emitter, String userMessage, String displayMessage,
+                            String conversationId, String imageData, String attachmentName,
+                            String attachmentType, Long userId) {
         try {
-            // 获取当前画像 JSON 传给 Python（用于画像增量更新）
-            UserProfile currentProfile = profileService.getCurrentProfile(userId, conversationId);
-            Map<String, Object> body = new HashMap<>();
-            body.put("message", userMessage);
-            body.put("profile_json", currentProfile.getProfileJson() != null
-                    ? currentProfile.getProfileJson() : "");
-            body.put("conversation_context", buildConversationContext(userId, conversationId));
-            body.put("current_plan_json", learningPlanRepository
-                    .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
-                    .map(LearningPlanEntity::getPlanJson)
-                    .orElse(""));
-            conversationSessionService.findSession(userId, conversationId).ifPresent(session -> {
-                body.put("memory_summary", valueOrEmpty(session.getMemorySummary()));
-                body.put("temporary_state_json", valueOrEmpty(session.getTemporaryStateJson()));
-                body.put("temporary_state_updated_at", session.getUpdatedAt() == null
-                        ? "" : session.getUpdatedAt().toString());
-                body.put("dialogue_state", valueOrEmpty(session.getDialogueState()));
-                body.put("pending_question", valueOrEmpty(session.getPendingQuestion()));
-            });
-            body.putIfAbsent("memory_summary", "");
-            body.putIfAbsent("temporary_state_json", "{}");
-            body.putIfAbsent("temporary_state_updated_at", "");
-            body.putIfAbsent("dialogue_state", "");
-            body.putIfAbsent("pending_question", "");
-            body.put("profile_evidence_json",
-                    profileEvidenceService.buildEvidenceJson(userId, conversationId));
-            body.put("recent_responses_json", buildRecentAssistantResponses(userId, conversationId));
-            String knowledgeContext = knowledgeBaseService.buildContext(
-                    userId, conversationId, userMessage, 6);
-            body.put("knowledge_context", knowledgeContext);
-            if (!knowledgeContext.isBlank()) {
-                log.info("知识库命中: userId={}, conversationId={}, contextLength={}",
-                        userId, conversationId, knowledgeContext.length());
+            if (userId != null) {
+                conversationSessionService.ensureSession(userId, conversationId);
             }
-            if (imageData != null && !imageData.isEmpty()) {
-                // 有图片时，传递图片数据
-                log.info(">>> 传递图片数据给 Python AI，imageData 长度: {}", imageData.length());
-                log.info(">>> imageData 前50字符: {}", imageData.substring(0, Math.min(50, imageData.length())));
-                body.put("image_data", imageData);
+            String visibleMessage = displayMessage == null || displayMessage.isBlank()
+                    ? userMessage : displayMessage;
+            Conversation userRecord = saveMessage(visibleMessage, userMessage, "user", conversationId, userId,
+                    attachmentName, attachmentType,
+                    "image".equals(attachmentType) ? imageData : null);
+            sendSSE(emitter, "conversation_id", conversationId);
+
+            StringBuilder response = new StringBuilder();
+            Map<String, Object> result;
+            boolean usedMock = mockMode;
+            if (mockMode) {
+                result = fallbackToMock(userMessage, userId, conversationId);
+                String mockResponse = String.valueOf(result.getOrDefault("response", ""));
+                response.append(mockResponse);
+                if (!mockResponse.isBlank()) {
+                    sendSSE(emitter, "content", mockResponse);
+                }
             } else {
-                log.info(">>> 无图片数据");
+                try {
+                    result = streamPythonChat(userMessage, imageData, userId, conversationId, emitter, response);
+                } catch (Exception streamError) {
+                    if (!response.isEmpty()) {
+                        throw streamError;
+                    }
+                    log.warn("Python SSE 连接失败，降级到 Mock: {}", streamError.getMessage());
+                    usedMock = true;
+                    result = fallbackToMock(userMessage, userId, conversationId);
+                    String mockResponse = String.valueOf(result.getOrDefault("response", ""));
+                    response.append(mockResponse);
+                    if (!mockResponse.isBlank()) {
+                        sendSSE(emitter, "content", mockResponse);
+                    }
+                }
             }
-            String json = objectMapper.writeValueAsString(body);
-            log.info(">>> 发送给 Python AI 的 JSON 长度: {}", json.length());
 
-            // 构造 HTTP POST 请求
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(pythonAiUrl + "/chat"))  // Python AI 服务地址
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(150))
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
+            UserProfile extractedProfile = profileService.parseProfileJson(
+                    String.valueOf(result.getOrDefault("profile_json", "{}")));
+            String evidenceJson = String.valueOf(result.getOrDefault("profile_evidence_json", "[]"));
+            java.util.Set<String> supportedDimensions = profileEvidenceService.persist(
+                    userId, conversationId, userRecord == null ? null : userRecord.getId(), evidenceJson);
+            UserProfile savedProfile = usedMock
+                    ? profileService.updateProfile(extractedProfile, userId, conversationId)
+                    : profileService.updateProfileWithSupportedDimensions(
+                            extractedProfile, userId, conversationId, supportedDimensions);
+            persistIntelligenceState(userId, conversationId,
+                    userRecord == null ? null : userRecord.getId(), result);
 
-            // 发送请求并获取响应
-            HttpResponse<String> httpResponse = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-
-            if (httpResponse.statusCode() == 200) {
-                // 成功：解析 JSON 响应
-                @SuppressWarnings("unchecked")
-                Map<String, Object> result = objectMapper.readValue(httpResponse.body(), Map.class);
-                return result;
-            } else {
-                log.error("Python AI 返回错误: {} {}", httpResponse.statusCode(), httpResponse.body());
-                throw new RuntimeException("Python AI 服务异常: " + httpResponse.statusCode());
+            sendSSE(emitter, "profile_update", savedProfile.getProfileJson());
+            String planAction = String.valueOf(result.getOrDefault("plan_action", "none"));
+            if (isPlanAction(planAction)) {
+                LearningPlan updatedPlan = regenerateAndPersistPlan(
+                        userId, conversationId,
+                        String.valueOf(result.getOrDefault("plan_revision_request", userMessage)),
+                        planAction,
+                        String.valueOf(result.getOrDefault("revision_scope_json", "{}")));
+                sendSSE(emitter, "plan_update", objectMapper.writeValueAsString(updatedPlan));
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Python AI 调用中断，降级到 Mock", e);
-            return fallbackToMock(userMessage, userId, conversationId);
+            String fullResponse = response.toString();
+            saveMessage(fullResponse, fullResponse, "assistant", conversationId, userId, null, null, null);
+            sendSSE(emitter, "done", "");
+            emitter.complete();
         } catch (Exception e) {
-            log.error("Python AI 调用失败，降级到 Mock: {}", e.getMessage());
-            return fallbackToMock(userMessage, userId, conversationId);
+            log.error("SSE 流输出异常: {}", e.getMessage(), e);
+            try {
+                sendSSE(emitter, "error", "AI 服务响应失败，请稍后重试。");
+                emitter.complete();
+            } catch (IOException ignored) {
+                emitter.completeWithError(e);
+            }
         }
+    }
+
+    /** Open Python's /chat/stream response and forward each native MiMo chunk immediately. */
+    private Map<String, Object> streamPythonChat(String userMessage, String imageData, Long userId,
+                                                  String conversationId, SseEmitter emitter,
+                                                  StringBuilder responseText) throws Exception {
+        UserProfile currentProfile = profileService.getCurrentProfile(userId, conversationId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", userMessage);
+        body.put("profile_json", currentProfile.getProfileJson() != null
+                ? currentProfile.getProfileJson() : "");
+        body.put("conversation_context", buildConversationContext(userId, conversationId));
+        body.put("current_plan_json", learningPlanRepository
+                .findFirstByUserIdAndConversationIdOrderByUpdatedAtDesc(userId, conversationId)
+                .map(LearningPlanEntity::getPlanJson)
+                .orElse(""));
+        conversationSessionService.findSession(userId, conversationId).ifPresent(session -> {
+            body.put("memory_summary", valueOrEmpty(session.getMemorySummary()));
+            body.put("temporary_state_json", valueOrEmpty(session.getTemporaryStateJson()));
+            body.put("temporary_state_updated_at", session.getUpdatedAt() == null
+                    ? "" : session.getUpdatedAt().toString());
+            body.put("dialogue_state", valueOrEmpty(session.getDialogueState()));
+            body.put("pending_question", valueOrEmpty(session.getPendingQuestion()));
+        });
+        body.putIfAbsent("memory_summary", "");
+        body.putIfAbsent("temporary_state_json", "{}");
+        body.putIfAbsent("temporary_state_updated_at", "");
+        body.putIfAbsent("dialogue_state", "");
+        body.putIfAbsent("pending_question", "");
+        body.put("profile_evidence_json", profileEvidenceService.buildEvidenceJson(userId, conversationId));
+        body.put("recent_responses_json", buildRecentAssistantResponses(userId, conversationId));
+        body.put("knowledge_context", knowledgeBaseService.buildContext(userId, conversationId, userMessage, 6));
+        if (imageData != null && !imageData.isEmpty()) {
+            body.put("image_data", imageData);
+        }
+
+        String json = objectMapper.writeValueAsString(body);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(pythonAiUrl + "/chat/stream"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .timeout(Duration.ofSeconds(150))
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        HttpResponse<Stream<String>> httpResponse = httpClient.send(request, HttpResponse.BodyHandlers.ofLines());
+        if (httpResponse.statusCode() != 200) {
+            throw new IOException("Python AI 服务异常: " + httpResponse.statusCode());
+        }
+
+        Map<String, Object> metadata = null;
+        try (Stream<String> lines = httpResponse.body()) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (!line.startsWith("data:")) continue;
+                JsonNode event = objectMapper.readTree(line.substring(5).trim());
+                String type = event.path("type").asText();
+                if ("metadata".equals(type)) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> value = objectMapper.convertValue(event.path("content"), Map.class);
+                    metadata = value;
+                } else if ("content".equals(type)) {
+                    String chunk = event.path("content").asText("");
+                    if (!chunk.isEmpty()) {
+                        responseText.append(chunk);
+                        sendSSE(emitter, "content", chunk);
+                    }
+                } else if ("error".equals(type)) {
+                    throw new IOException(event.path("content").asText("Python 流式生成失败"));
+                } else if ("done".equals(type) && metadata != null) {
+                    String qualityJson = event.path("content").path("quality_json").asText("");
+                    if (!qualityJson.isBlank()) {
+                        metadata.put("quality_json", qualityJson);
+                    }
+                }
+            }
+        }
+        if (metadata == null) {
+            throw new IOException("Python SSE 未返回元数据");
+        }
+        if (responseText.isEmpty()) {
+            throw new IOException("Python SSE 未返回回复内容");
+        }
+        return metadata;
     }
 
     /**
@@ -566,15 +551,9 @@ public class ChatService {
      * @param content 事件内容
      */
     private void sendSSE(SseEmitter emitter, String type, String content) throws IOException {
-        // 转义特殊字符（防止 JSON 注入和格式错误）
-        String escaped = content
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-        String data = "{\"type\":\"" + type + "\",\"content\":\"" + escaped + "\"}";
-        emitter.send(SseEmitter.event().data(data));  // 【Spring Boot】SSE 事件发送
+        emitter.send(SseEmitter.event().name(type).data(Map.of(
+                "type", type,
+                "content", content == null ? "" : content), MediaType.APPLICATION_JSON));
     }
 
     /**

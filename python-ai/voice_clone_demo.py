@@ -45,6 +45,15 @@ class VoiceCloneError(RuntimeError):
     """Raised when the voice-clone request cannot produce an audio file."""
 
 
+def is_wav_audio(audio_bytes: bytes) -> bool:
+    """Return whether bytes contain the minimum RIFF/WAVE signature browsers expect."""
+    return (
+        len(audio_bytes) >= 12
+        and audio_bytes[:4] == b"RIFF"
+        and audio_bytes[8:12] == b"WAVE"
+    )
+
+
 def get_mimo_api_key() -> str | None:
     """Read ``MIMO_API_KEY`` from the environment or a local .env file.
 
@@ -144,9 +153,12 @@ def extract_audio_bytes(completion: Any) -> bytes:
         raise VoiceCloneError("MiMo 返回的 audio.data 为空或格式错误。")
 
     try:
-        return base64.b64decode(audio_data, validate=True)
+        audio_bytes = base64.b64decode(audio_data, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise VoiceCloneError("MiMo 返回的 audio.data 不是有效的 Base64 数据。") from exc
+    if not is_wav_audio(audio_bytes):
+        raise VoiceCloneError("MiMo 返回的数据不是有效的 WAV 音频。")
+    return audio_bytes
 
 
 def voice_clone(

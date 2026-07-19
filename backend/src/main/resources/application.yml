@@ -20,8 +20,10 @@ server:
 spring:
   datasource:                                       # 【Spring Boot】DataSource 自动配置
     url: ${DB_URL:jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD:123456}
+    # 兼容早期 MYSQL_* 变量；优先使用更通用的 DB_* 变量。
+    username: ${DB_USER:${MYSQL_USER:root}}
+    # 不提供默认密码，避免部署时意外使用弱口令；本地请在 .env/环境变量中显式配置。
+    password: ${DB_PASSWORD:${MYSQL_PASSWORD:}}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
   h2:                                               # 【Spring Boot】H2 Console 配置
     console:

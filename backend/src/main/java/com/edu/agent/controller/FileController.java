@@ -35,7 +35,7 @@ public class FileController {
 
     private static final Logger log = LoggerFactory.getLogger(FileController.class);
     private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
-    private static final java.util.Set<String> ALLOWED_EXTENSIONS = java.util.Set.of("pdf", "docx", "txt");
+    private static final java.util.Set<String> ALLOWED_EXTENSIONS = java.util.Set.of("pdf", "docx", "txt", "md");
 
     @Value("${python.ai.url:http://localhost:8000}")
     private String pythonAiUrl;
@@ -79,7 +79,7 @@ public class FileController {
         }
         log.info(">>> POST /api/parse-file —— filename: {}, size: {}", file.getOriginalFilename(), file.getSize());
 
-        String originalFilename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        String originalFilename = sanitizeFilename(file.getOriginalFilename());
         String extension = originalFilename.contains(".")
                 ? originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT)
                 : "";
@@ -91,7 +91,7 @@ public class FileController {
                     .body(ApiResponse.error(413, "文件不能超过 10MB"));
         }
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "仅支持 PDF、DOCX 和 TXT 文件"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "仅支持 PDF、DOCX、TXT 和 Markdown 文件"));
         }
 
         try {
@@ -184,5 +184,14 @@ public class FileController {
         System.arraycopy(b, 0, result, a.length, b.length);
         System.arraycopy(c, 0, result, a.length + b.length, c.length);
         return result;
+    }
+
+    private static String sanitizeFilename(String rawFilename) {
+        if (rawFilename == null) return "";
+        String normalized = rawFilename.replace('\\', '/');
+        int lastSeparator = normalized.lastIndexOf('/');
+        String basename = lastSeparator >= 0 ? normalized.substring(lastSeparator + 1) : normalized;
+        basename = basename.replaceAll("[\\p{Cntrl}]", "_").trim();
+        return basename.length() <= 255 ? basename : basename.substring(basename.length() - 255);
     }
 }

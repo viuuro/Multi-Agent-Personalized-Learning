@@ -1,7 +1,7 @@
 import { useChatStore } from '../stores/chatStore'
 import { useProfileStore } from '../stores/profileStore'
 import type { UserProfile } from '../stores/profileStore'
-import type { LearningPlan } from './api'
+import { apiFetch, type LearningPlan } from './api'
 
 const STREAM_INACTIVITY_TIMEOUT_MS = 90_000
 
@@ -51,7 +51,7 @@ export async function sendMessage(
   resetInactivityTimer()
 
   try {
-    const response = await fetch('/api/chat', {
+    const response = await apiFetch('/api/chat', {
       method: 'POST',
       credentials: 'include',
       signal: controller.signal,

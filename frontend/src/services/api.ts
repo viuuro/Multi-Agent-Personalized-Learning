@@ -8,6 +8,48 @@ import type { UserProfile } from '../stores/profileStore'
  */
 
 const BASE_URL = '/api'
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE'])
+
+let csrfToken: string | null = null
+let csrfTokenRequest: Promise<string> | null = null
+
+async function loadCsrfToken(force = false): Promise<string> {
+  if (!force && csrfToken) return csrfToken
+  if (!force && csrfTokenRequest) return csrfTokenRequest
+
+  const pending = fetch(`${BASE_URL}/auth/csrf`, { credentials: 'include' })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`CSRF token request failed: HTTP ${response.status}`)
+      const payload = await response.json() as ApiResponse<{ token: string }>
+      if (!payload.data?.token) throw new Error('CSRF token response is invalid')
+      csrfToken = payload.data.token
+      return csrfToken
+    })
+    .finally(() => {
+      csrfTokenRequest = null
+    })
+  csrfTokenRequest = pending
+  return pending
+}
+
+/** Same-origin API fetch with session credentials and CSRF protection for unsafe methods. */
+export async function apiFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
+  const method = (options.method || 'GET').toUpperCase()
+  const unsafe = !SAFE_METHODS.has(method)
+
+  const execute = async (forceToken = false) => {
+    const headers = new Headers(options.headers)
+    if (unsafe) headers.set('X-CSRF-TOKEN', await loadCsrfToken(forceToken))
+    return fetch(input, { credentials: 'include', ...options, headers })
+  }
+
+  let response = await execute()
+  if (unsafe && response.status === 403) {
+    csrfToken = null
+    response = await execute(true)
+  }
+  return response
+}
 
 // ========== 类型定义 ==========
 
@@ -214,8 +256,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<ApiRespon
   if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const res = await fetch(`${BASE_URL}${url}`, {
-    credentials: 'include',
+  const res = await apiFetch(`${BASE_URL}${url}`, {
     ...options,
     headers,
   })
@@ -324,6 +365,7 @@ export async function fetchCurrentUserApi(): Promise<AuthUser> {
 
 export async function logoutApi(): Promise<void> {
   await request<void>('/auth/logout', { method: 'POST', body: '{}' })
+  csrfToken = null
 }
 
 /**
@@ -492,7 +534,7 @@ export async function fetchVoiceAudio(
   style = '',
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/voice/welcome`, {
+  const res = await apiFetch(`${BASE_URL}/voice/welcome`, {
     method: 'POST',
     credentials: 'include',
     headers: {

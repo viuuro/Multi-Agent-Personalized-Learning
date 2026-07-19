@@ -22,16 +22,18 @@ import hashlib
 import requests as http_requests
 import asyncio
 import json
+import io
 import os
 import re
 import time
 import logging
+import zipfile
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # LangChain 核心组件
@@ -107,6 +109,11 @@ IMAGE_GENERATION_MODEL = os.getenv(
     "IMAGE_GENERATION_MODEL", "doubao-seedream-5-0-lite-260128"
 ).strip()
 IMAGE_GENERATION_SIZE = os.getenv("IMAGE_GENERATION_SIZE", "2K").strip() or "2K"
+PYTHON_AI_ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("PYTHON_AI_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
+    if host.strip()
+]
 
 
 def image_generation_configured() -> bool:
@@ -206,7 +213,7 @@ question_review_llm = ChatOpenAI(
 )
 
 app = FastAPI(title="Edu AI Service")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=PYTHON_AI_ALLOWED_HOSTS)
 
 
 # ===== 数据模型 =====
@@ -1627,6 +1634,35 @@ async def evaluate_submission(req: EvaluationRequest):
         raise HTTPException(status_code=502, detail="MiMo 成果评价暂时不可用")
 
 
+def validate_uploaded_document(ext: str, content: bytes) -> None:
+    """Reject files whose bytes do not match the allowlisted document format."""
+    if ext in {"txt", "md"}:
+        if b"\x00" in content:
+            raise HTTPException(status_code=415, detail="文本文件包含二进制内容")
+        try:
+            content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=415, detail="文本文件必须使用 UTF-8 编码") from exc
+        return
+
+    if ext == "pdf":
+        if b"%PDF-" not in content[:1024]:
+            raise HTTPException(status_code=415, detail="文件内容不是有效的 PDF")
+        return
+
+    if ext == "docx":
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+                    raise HTTPException(status_code=415, detail="文件内容不是有效的 DOCX")
+                total_uncompressed = sum(info.file_size for info in archive.infolist())
+                if total_uncompressed > 50 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="DOCX 解压后内容不能超过 50MB")
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise HTTPException(status_code=415, detail="文件内容不是有效的 DOCX") from exc
+
+
 @app.post("/parse-file")
 async def parse_file(file: UploadFile = File(...)):
     """
@@ -1645,18 +1681,19 @@ async def parse_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="文件不能超过 10MB")
     if not content:
         raise HTTPException(status_code=400, detail="文件不能为空")
+    validate_uploaded_document(ext, content)
 
     try:
         if ext in {"txt", "md"}:
-            text = content.decode("utf-8", errors="ignore")
+            text = content.decode("utf-8-sig")
         elif ext == "pdf":
             from pypdf import PdfReader
-            import io
             reader = PdfReader(io.BytesIO(content))
+            if len(reader.pages) > 500:
+                raise HTTPException(status_code=413, detail="PDF 页数不能超过 500 页")
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
         elif ext == "docx":
             from docx import Document
-            import io
             doc = Document(io.BytesIO(content))
             text = "\n".join(para.text for para in doc.paragraphs)
         if not text.strip():

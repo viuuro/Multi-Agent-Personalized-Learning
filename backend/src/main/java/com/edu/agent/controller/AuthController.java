@@ -18,6 +18,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -190,6 +191,15 @@ public class AuthController {
         return ApiResponse.success(Map.of(
                 "id", user.getId(), "username", user.getUsername(),
                 "avatar", user.getAvatar() == null ? "" : user.getAvatar()));
+    }
+
+    /** SPA 在首次写请求前获取会话绑定的 CSRF 令牌。 */
+    @GetMapping("/csrf")
+    public ApiResponse<Map<String, String>> csrf(CsrfToken csrfToken) {
+        return ApiResponse.success(Map.of(
+                "headerName", csrfToken.getHeaderName(),
+                "parameterName", csrfToken.getParameterName(),
+                "token", csrfToken.getToken()));
     }
 
     @PostMapping("/logout")

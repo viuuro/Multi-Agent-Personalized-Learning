@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:security-test;MODE=MYSQL;DB_CLOSE_DELAY=-1",
@@ -31,6 +32,7 @@ class SecurityIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/api/auth/register")
+                        .with(csrf())
                         .contentType("application/json")
                         .content("{\"username\":\"security-user\",\"password\":\"safe-pass-123\"}"))
                 .andExpect(status().isOk())
@@ -45,9 +47,23 @@ class SecurityIntegrationTest {
     @Test
     void weakPasswordsAreRejected() throws Exception {
         mockMvc.perform(post("/api/auth/register")
+                        .with(csrf())
                         .contentType("application/json")
                         .content("{\"username\":\"weak-user\",\"password\":\"123\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void unsafeRequestsRequireCsrfToken() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType("application/json")
+                        .content("{\"username\":\"csrf-user\",\"password\":\"safe-pass-123\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.headerName").value("X-CSRF-TOKEN"))
+                .andExpect(jsonPath("$.data.token").isNotEmpty());
     }
 }

@@ -217,7 +217,9 @@
 <script setup lang="ts">
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { useChatStore } from '../stores/chatStore'
+import { useProfileStore } from '../stores/profileStore'
 import {
+  fetchProfile,
   fetchPracticeQuestionsApi,
   fetchSavedPlanApi,
   generatePracticeQuestionsApi,
@@ -236,6 +238,7 @@ import PracticeStatsPie from './PracticeStatsPie.vue'
 import LearningOverview from './LearningOverview.vue'
 
 const chatStore = useChatStore()
+const profileStore = useProfileStore()
 const workspaceMode = ref<'practice' | 'overview'>('practice')
 const plan = ref<LearningPlan | null>(null)
 const questions = ref<PracticeQuestion[]>([])
@@ -385,6 +388,11 @@ async function submitAnswer(question: PracticeQuestion) {
     const updated = await submitPracticeAnswerApi(question.id, answer)
     replaceQuestion(updated)
     saveStates[question.id] = 'saved'
+    try {
+      profileStore.setProfile(await fetchProfile(0, chatStore.conversationId))
+    } catch {
+      // 作答提交已成功；画像刷新失败时保留当前界面数据，下一次同步会自动补齐。
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '答案提交失败'
   } finally { submittingId.value = null }

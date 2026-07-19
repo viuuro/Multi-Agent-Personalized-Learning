@@ -242,6 +242,7 @@ class PlanRequest(BaseModel):
     revision_action: str = "none"
     revision_scope_json: str = ""
     resource_feedback_json: str = ""
+    knowledge_context: str = ""
 
 
 class ConversationTitleRequest(BaseModel):
@@ -392,6 +393,10 @@ profile_extraction_prompt = ChatPromptTemplate.from_messages([
 5. weaknessPoints 必须是可行动、可学习的短板；禁止使用“基础概念”等没有上下文支撑的泛化默认值。
 6. 信息不足时保守更新，不编造。
 7. 智能体的推测、建议或陈述不能单独作为画像证据；画像变化必须能追溯到用户自己的表达。
+8. 用户只是提出一道题、请求解释或自称“学会了”，不能据此提高 knowledgeBase；应由实际作答记录校准。
+9. 数据结构与计组采用同一能力阶梯：1-2仅识别术语；3-4能复述基本操作/表示；5-6能独立完成标准追踪或计算；7-8能处理边界条件、组合题并解释过程；9-10能证明、设计并迁移到新情境。
+10. 两门课的 weaknessPoints 必须写成“数据结构·具体章节/技能”或“计组·具体章节/技能”，例如“数据结构·图的最短路径建模”“计组·Cache地址分解”，禁止只写“基础薄弱”。
+11. cognitiveStyle 依据用户持续偏好的呈现方式评判；单次要求画图、举例或给答案不足以改变它。
 
 只返回严格 JSON：
 {{
@@ -513,7 +518,11 @@ def analyze_learning_turn(req: ChatRequest, current_profile: dict) -> tuple[dict
 7. 如果上一轮正在等待澄清，而最新消息回答了该问题，要恢复被挂起的动作，并把前后要求合并到 plan_revision_request。
 8. 修改具体周时 revision_scope.weeks 给出周序号；局部修改必须保留未涉及周。
 9. memory_summary 只保留目标、重要约束、已达成结论、当前进展和未解决问题，不记录寒暄，不超过700字。
-10. 只输出一个严格 JSON 对象。"""
+10. 用户提问或自我宣称不能证明 mastery，不要仅据此上调 knowledgeBase；实际作答会由练习证据单独校准。
+11. 数据结构与计组能力统一按阶梯判断：1-2识别术语，3-4复述基本操作/表示，5-6独立完成标准追踪或计算，7-8处理边界和组合题并解释过程，9-10证明、设计和迁移。
+12. 这两门课的 weaknessPoints 必须具体到章节或技能，并使用“数据结构·…”或“计组·…”前缀；不要输出“基础概念薄弱”等泛化判断。
+13. cognitiveStyle 只有在用户持续表达呈现偏好时才改变，单次请求图片、例子或简答不构成长期证据。
+14. 只输出一个严格 JSON 对象。"""
     user_prompt = f"""当前长期画像：
 {json.dumps(current_profile, ensure_ascii=False)}
 
@@ -907,7 +916,9 @@ plan_prompt = ChatPromptTemplate.from_messages([
 6. 如果存在现有计划和修订要求，保留仍然有价值的内容，针对要求调整目标、难度、顺序和任务。
 7. 任务必须具体、可执行、可检查，四周应形成渐进路径。
 8. “待评估、待确定、尚未确定、暂无、未知”等是画像占位值，不是学习方向，禁止把它们写入主题或任务。如果没有明确方向，使用“软件工程基础”作为可执行的默认方向。
-9. 只返回 JSON，不要任何其他文字。"""),
+9. 若方向是数据结构或计算机组成原理，必须以“课程知识库检索证据”中的真实章节层级为范围，任务明确到知识点和可验证产物（手算过程、状态追踪、复杂度分析、地址/位数计算、数据通路或时序分析），不得生成泛化的“阅读并理解”。
+10. 两门课应优先覆盖画像中带课程前缀的薄弱点；基础较低时安排单概念与标准题，基础较高时安排边界条件、组合分析、证明或设计题。
+11. 只返回 JSON，不要任何其他文字。"""),
     ("user", """学生画像：
 - 知识基础：{knowledgeBase}/10
 - 学习风格：{cognitiveStyle}
@@ -1481,7 +1492,11 @@ async def plan(req: PlanRequest):
             pass
 
     # Step 1: 生成计划框架（结合对话上下文）
-    context = req.conversation_context or ""
+    conversation_context = req.conversation_context or ""
+    course_knowledge = (req.knowledge_context or "").strip()[:14000]
+    context = conversation_context
+    if course_knowledge:
+        context = (f"{conversation_context}\n\n课程知识库检索证据：\n{course_knowledge}").strip()
     weeks = generate_plan(
         profile,
         context,

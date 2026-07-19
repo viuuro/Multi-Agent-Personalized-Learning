@@ -134,7 +134,9 @@ public class PracticeQuestionService {
         question.setScore(score);
         question.setCorrect(score >= 80);
         question.setSubmittedAt(LocalDateTime.now());
-        return toView(repository.save(question));
+        PracticeQuestion saved = repository.save(question);
+        updateCourseProfileFromPractice(userId, saved);
+        return toView(saved);
     }
 
     private LearningPlan currentPlan(Long userId, String conversationId) {
@@ -191,16 +193,28 @@ public class PracticeQuestionService {
                 weekTopic == null ? "" : weekTopic,
                 taskTitle == null ? "" : taskTitle).trim();
         List<KnowledgeBaseService.SearchResult> results =
-                knowledgeBaseService.search(userId, conversationId, query, 6);
+                knowledgeBaseService.search(userId, conversationId, query, 12);
         if (results.isEmpty()) return new KnowledgeContext("", List.of());
+
+        List<KnowledgeBaseService.SearchResult> facts = results.stream()
+                .filter(result -> !isAssessmentGuidance(result.heading()))
+                .limit(6).toList();
+        List<KnowledgeBaseService.SearchResult> guidance = results.stream()
+                .filter(result -> isAssessmentGuidance(result.heading()))
+                .limit(2).toList();
+        List<KnowledgeBaseService.SearchResult> selected = new ArrayList<>(facts);
+        selected.addAll(guidance);
+        if (selected.isEmpty()) selected.addAll(results.stream().limit(6).toList());
 
         StringBuilder context = new StringBuilder();
         List<Long> chunkIds = new ArrayList<>();
-        for (int index = 0; index < results.size(); index++) {
-            KnowledgeBaseService.SearchResult result = results.get(index);
+        for (int index = 0; index < selected.size(); index++) {
+            KnowledgeBaseService.SearchResult result = selected.get(index);
             chunkIds.add(result.chunkId());
             context.append("[资料").append(index + 1)
                     .append("; chunkId=").append(result.chunkId())
+                    .append("; 用途=")
+                    .append(isAssessmentGuidance(result.heading()) ? "命题指导" : "知识依据")
                     .append("; 文档=").append(result.documentTitle());
             if (result.heading() != null && !result.heading().isBlank()) {
                 context.append("; 章节=").append(result.heading());
@@ -208,6 +222,68 @@ public class PracticeQuestionService {
             context.append("]\n").append(result.content().trim()).append("\n\n");
         }
         return new KnowledgeContext(context.toString().trim(), chunkIds.stream().distinct().toList());
+    }
+
+    private boolean isAssessmentGuidance(String heading) {
+        return heading != null && (heading.contains("第二部分：出题篇")
+                || heading.contains("题型与分值") || heading.contains("命题"));
+    }
+
+    private void updateCourseProfileFromPractice(Long userId, PracticeQuestion latest) {
+        String family = courseFamily(latest);
+        if (family == null) return;
+        List<PracticeQuestion> submitted = repository
+                .findByUserIdAndConversationIdOrderByCreatedAtDescIdAsc(
+                        userId, latest.getConversationId())
+                .stream()
+                .filter(item -> PracticeQuestion.STATUS_SUBMITTED.equals(item.getStatus()))
+                .filter(item -> family.equals(courseFamily(item)))
+                .toList();
+        if (submitted.isEmpty()) return;
+
+        double weightedTotal = 0;
+        double totalWeight = 0;
+        LinkedHashMap<String, Integer> latestScores = new LinkedHashMap<>();
+        for (PracticeQuestion item : submitted) {
+            double weight = switch (item.getDifficulty() == null ? "" : item.getDifficulty()) {
+                case "HARD" -> 1.45;
+                case "MEDIUM" -> 1.20;
+                default -> 1.0;
+            };
+            weightedTotal += (item.getScore() == null ? 0 : item.getScore()) * weight;
+            totalWeight += weight;
+            String point = item.getKnowledgePoint() == null || item.getKnowledgePoint().isBlank()
+                    ? item.getTaskTitle() : item.getKnowledgePoint();
+            latestScores.putIfAbsent(point.trim(), item.getScore() == null ? 0 : item.getScore());
+        }
+        int courseScore = (int) Math.round(weightedTotal / Math.max(1.0, totalWeight));
+        String courseLabel = "DATA_STRUCTURE".equals(family) ? "数据结构" : "计组";
+        List<String> weaknesses = latestScores.entrySet().stream()
+                .filter(entry -> entry.getValue() < 80)
+                .map(entry -> courseLabel + "·" + entry.getKey())
+                .limit(4).toList();
+        profileService.applyPracticeAssessment(userId, latest.getConversationId(),
+                courseLabel, courseScore, submitted.size(), weaknesses);
+    }
+
+    private String courseFamily(PracticeQuestion question) {
+        String text = String.join(" ",
+                Objects.toString(question.getWeekTopic(), ""),
+                Objects.toString(question.getTaskTitle(), ""),
+                Objects.toString(question.getKnowledgePoint(), "")).toLowerCase(Locale.ROOT);
+        if (containsAny(text, "计算机组成", "计组", "cache", "存储系统", "指令系统", "寻址",
+                "数据通路", "控制器", "流水线", "总线", "中断", "dma", "补码", "浮点数")) {
+            return "COMPUTER_ORGANIZATION";
+        }
+        if (containsAny(text, "数据结构", "线性表", "链表", "栈", "队列", "二叉树",
+                "散列表", "哈希", "排序", "查找", "最短路径", "拓扑", "并查集")) {
+            return "DATA_STRUCTURE";
+        }
+        return null;
+    }
+
+    private boolean containsAny(String text, String... terms) {
+        return Arrays.stream(terms).anyMatch(text::contains);
     }
 
     private List<String> readOptions(String value) {

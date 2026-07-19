@@ -187,6 +187,57 @@ public class ProfileService {
     }
 
     /**
+     * 将两门核心课程的真实作答证据并入画像。难题权重由练习服务计算；
+     * 单次作答只做小幅校准，样本增加后才逐步提高评判权重。
+     */
+    public UserProfile applyPracticeAssessment(Long userId,
+                                               String conversationId,
+                                               String courseLabel,
+                                               int courseScore,
+                                               int sampleCount,
+                                               List<String> activeWeaknesses) {
+        UserProfile current = getCurrentProfile(userId, conversationId);
+        int currentLevel = Math.max(1, Math.min(10, current.getKnowledgeBase()));
+        int evidenceLevel = Math.max(1, Math.min(10,
+                (int) Math.round(1 + Math.max(0, Math.min(100, courseScore)) * 9.0 / 100.0)));
+        double evidenceWeight = Math.min(0.70, 0.12 + Math.max(1, sampleCount) * 0.09);
+        int calibratedLevel = Math.max(1, Math.min(10,
+                (int) Math.round(currentLevel * (1 - evidenceWeight) + evidenceLevel * evidenceWeight)));
+
+        String prefix = courseLabel + "·";
+        java.util.LinkedHashSet<String> weaknesses = new java.util.LinkedHashSet<>();
+        if (current.getWeaknessPoints() != null) {
+            current.getWeaknessPoints().stream()
+                    .filter(item -> item != null && !item.isBlank() && !"待评估".equals(item))
+                    .filter(item -> !item.startsWith(prefix))
+                    .forEach(weaknesses::add);
+        }
+        if (activeWeaknesses != null) {
+            activeWeaknesses.stream()
+                    .filter(item -> item != null && !item.isBlank())
+                    .forEach(weaknesses::add);
+        }
+
+        java.util.LinkedHashSet<String> interests = new java.util.LinkedHashSet<>();
+        if (current.getInterestAreas() != null) {
+            current.getInterestAreas().stream()
+                    .filter(item -> item != null && !item.isBlank() && !"待评估".equals(item))
+                    .forEach(interests::add);
+        }
+        if (sampleCount >= 2) interests.add("计组".equals(courseLabel) ? "计算机组成原理" : courseLabel);
+
+        UserProfile extracted = new UserProfile();
+        copyTransientFields(current, extracted);
+        extracted.setKnowledgeBase(calibratedLevel);
+        extracted.setWeaknessPoints(weaknesses.isEmpty() ? List.of() : weaknesses.stream().limit(6).toList());
+        extracted.setInterestAreas(interests.isEmpty() ? current.getInterestAreas() : interests.stream().limit(6).toList());
+        java.util.Set<String> supported = new java.util.HashSet<>(
+                java.util.Set.of("knowledgeBase", "weaknessPoints"));
+        if (sampleCount >= 2) supported.add("interestAreas");
+        return updateProfileWithSupportedDimensions(extracted, userId, conversationId, supported);
+    }
+
+    /**
      * 创建默认画像 —— 用于用户首次使用时初始化
      * 所有维度设为中性值，等待后续对话逐步修正
      *

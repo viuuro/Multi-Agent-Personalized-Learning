@@ -215,6 +215,7 @@ def _build_blueprints(req, count: int, question_type: str, difficulty: str,
 学生基础：{profile.get('knowledgeBase', 5)}/10
 薄弱点：{'、'.join(profile.get('weaknessPoints', [])) or '暂无明确薄弱点'}
 规则：{grounding_rule}
+知识库条目标注为“知识依据”时可用于题干事实、计算参数与答案；标注为“命题指导”时只用于选择考点、题型和误区，不能单独作为答案事实来源。若两类同时存在，每道题至少引用一个“知识依据”条目。
 
 知识库内容：
 {context or '（无检索结果）'}
@@ -448,6 +449,7 @@ def _generate_candidates(req, blueprints: list[dict], question_type: str,
 题型规则：{QUESTION_TYPE_RULES[question_type]}
 难度规则：{DIFFICULTY_RULES[difficulty]}
 事实约束：{grounding_rule}
+带“用途=知识依据”的条目才能支撑专业事实与答案；带“用途=命题指导”的条目只能帮助设计题型和干扰项。两类同时存在时，每题 sourceChunkIds 至少包含一个知识依据条目的 ID。
 
 蓝图：{json.dumps(blueprints, ensure_ascii=False)}
 
@@ -484,7 +486,7 @@ def _review_candidates(req, candidates: list[dict], count: int,
         "sourceChunkIds": item["sourceChunkIds"],
     } for index, item in enumerate(candidates)]
     prompt = f"""请对以下候选题进行盲审：你看不到命题者给出的答案，必须独立求解后判断是否可用。
-审核维度：与周主题和小任务直接相关；符合题型和难度；题目必须自包含，不得用“资料1、资料3、上述材料、给定文档”等用户不可见的检索标签代替事实；答案唯一且可由题干和知识库证明；有知识库时事实和 sourceChunkIds 均可追溯；选项不得复述题干；不同题目不得复用相同或高度重合的选项集合。
+审核维度：与周主题和小任务直接相关；符合题型和难度；题目必须自包含，不得用“资料1、资料3、上述材料、给定文档”等用户不可见的检索标签代替事实；答案唯一且可由题干和知识库证明；有知识库时事实和 sourceChunkIds 均可追溯；“命题指导”不能单独证明答案，必须由“知识依据”支撑；选项不得复述题干；不同题目不得复用相同或高度重合的选项集合。
 课程专用审核：{SPECIALIZED_COURSE_RULES.get(family, '按通用计算机课程标准审核。')}
 题型规则：{QUESTION_TYPE_RULES[question_type]}
 难度规则：{DIFFICULTY_RULES[difficulty]}

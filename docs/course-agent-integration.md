@@ -4,10 +4,10 @@
 
 课程知识库不是“把教材切成文本块”即可完成。每一份内容都应同时服务于答疑、计划、出题、掌握度计算和资源推荐，因此必须让课程、章节、知识点、先修关系、学习目标和可验证题目之间可以稳定关联。
 
-首期课程目录与学习总览保持一致：
+当前课程目录直接从项目 Markdown 的正式章节口径维护，并与学习总览一致：
 
-- 数据结构：线性表、栈与队列、串/数组/广义表、树与二叉树、图、查找、排序、高级数据结构。
-- 计算机组成原理：数据表示与编码、运算方法与运算器、存储系统、指令系统、中央处理器、控制器、输入输出系统、并行与性能。
+- 数据结构：14 章，覆盖复杂度、线性结构、串、树、图、排序、查找索引、算法设计、复杂性与进阶专题。
+- 计算机组成原理：12 章，覆盖系统概论、数据表示、存储、指令、CPU、总线、I/O、数字逻辑、并行、辅助存储、指令集对比与综合复盘。
 
 ## 2. 建议的数据模型
 
@@ -45,15 +45,15 @@ version: 1.0.0
 
 ## 3. 智能体接入链路
 
-### 离线建库
+### 当前离线建库
 
-1. 课程编排智能体根据目录和先修关系生成课程 manifest，但不直接发布正文。
-2. 内容质检智能体检查章节覆盖、术语一致性、公式/代码可执行性、来源与许可证。
-3. 题目蓝图智能体为每个学习目标生成题型、难度、认知层级和评分规则。
-4. Java 索引服务验收 manifest、保存课程语义层，并将正文写入现有 `knowledge_document/knowledge_chunk`。
-5. 建立版本化发布流程：`DRAFT -> REVIEWED -> PUBLISHED -> RETIRED`，已发布版本不可原地覆盖。
+1. `CourseMarkdownKnowledgeSeeder` 在后端启动时读取 `knowledge base/Data Structure.md` 与 `knowledge base/Computer Organization Principles.md`。
+2. Markdown 按标题层级与最大块长切分，分块保留“课程 > 章 > 节”的完整路径。
+3. 两门课使用独立的 `COURSE_MARKDOWN` 种子组，与原有 `BUILTIN` 课程独立替换，不会互相删除。
+4. 内容校验通过后写入 `knowledge_document/knowledge_chunk`；内容校验和不变时复用已有索引。
+5. 可用 `KNOWLEDGE_SEED_CORE_COURSES_ENABLED` 控制启用，用 `KNOWLEDGE_COURSE_DIRECTORY` 覆盖目录。
 
-当前 `SoftwareEngineeringKnowledgeSeeder` 会用 `replaceGlobalSeeds` 替换全部 `BUILTIN` 文档。正式接入两门完整课程前，应先将其改成按 `seed_namespace + version` 替换，避免一组课程种子删除另一组课程。
+当前两份文件共建成 2 个课程文档、166 个知识块；后续若引入课程版本发布，可在此基础上补 manifest 与 `DRAFT -> REVIEWED -> PUBLISHED -> RETIRED` 状态。
 
 ### 在线学习
 
@@ -93,8 +93,8 @@ evidence = score
 
 ## 6. 推荐实施顺序
 
-1. 先建立两门课程的 manifest、16 章目录和知识点/先修关系，冻结稳定 key。
-2. 改造种子发布为按命名空间版本化，补 `chunk_binding` 与元数据过滤检索。
-3. 每章先完成一个可闭环样板：内容、引用、题目蓝图、三档难度题和掌握证据。
-4. 接入知识点级出题与审核，再将当前前端章节掌握度切换到 `/api/mastery/overview`。
-5. 批量补齐两门课程，运行覆盖率、检索命中率、题目有效率和引用正确率评测后发布。
+1. 为 26 个现有课程章节冻结稳定 key，并逐步补知识点与先修关系 manifest。
+2. 补 `chunk_binding` 和课程版本字段，使检索能按知识点与内容角色过滤。
+3. 每章补齐可观测学习目标、三档题目蓝图和评分规则。
+4. 将当前练习证据画像进一步拆成知识点级 `mastery_evidence`，前端改读 `/api/mastery/overview`。
+5. 持续运行章节覆盖率、检索命中率、试题有效率和引用正确率评测后版本化发布。

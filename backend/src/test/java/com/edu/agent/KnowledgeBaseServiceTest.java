@@ -102,6 +102,35 @@ class KnowledgeBaseServiceTest {
                         || chunk.getDocumentId().equals(oldCourseBId));
     }
 
+    @Test
+    void keepsCourseSeedGroupsIsolatedAndPreservesHeadingHierarchy() {
+        KnowledgeDocument builtin = knowledgeBaseService.replaceGlobalSeeds(List.of(
+                seed("原有课程", "# 原有课程\n## 测试章节\n持续集成与自动测试。".repeat(20))))
+                .get(0);
+        knowledgeBaseService.replaceGlobalSeeds("COURSE_MARKDOWN", List.of(
+                seed("课程知识库：计算机组成原理", """
+                        # 计算机组成原理
+                        ## 第3章 存储系统
+                        ### 3.3 Cache 地址映射
+                        直接映射把主存块映射到唯一的 Cache 行，并将地址拆分为标记、行号和块内偏移。
+                        """.repeat(15))));
+
+        knowledgeBaseService.replaceGlobalSeeds("COURSE_MARKDOWN", List.of(
+                seed("课程知识库：计算机组成原理", """
+                        # 计算机组成原理
+                        ## 第3章 存储系统
+                        ### 3.3 Cache 地址映射
+                        组相联映射先用组号定位，再比较组内各行的标记位。
+                        """.repeat(15))));
+
+        assertThat(documentRepository.findById(builtin.getId())).isPresent();
+        assertThat(knowledgeBaseService.search(99L, "any", "计组 Cache 地址映射", 5))
+                .anySatisfy(result -> {
+                    assertThat(result.documentTitle()).isEqualTo("课程知识库：计算机组成原理");
+                    assertThat(result.heading()).contains("计算机组成原理", "第3章 存储系统", "3.3 Cache 地址映射");
+                });
+    }
+
     private KnowledgeBaseService.SeedDocument seed(String title, String content) {
         return new KnowledgeBaseService.SeedDocument(
                 title, "classpath://test/" + title, "测试原创内容", content);

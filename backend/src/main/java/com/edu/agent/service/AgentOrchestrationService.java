@@ -60,6 +60,8 @@ public class AgentOrchestrationService {
     private final ConversationRepository conversationRepository;
     /** 用户对历史资源的反馈，用于个性化调整后续排序。 */
     private final LearningResourceFeedbackService resourceFeedbackService;
+    /** 课程知识库检索，用于让计划与资源围绕真实章节内容生成。 */
+    private final KnowledgeBaseService knowledgeBaseService;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置的 HTTP 客户端，用于调用 Python AI 服务 */
@@ -79,11 +81,13 @@ public class AgentOrchestrationService {
                                      MockAiService mockAiService,
                                      ConversationRepository conversationRepository,
                                      LearningResourceFeedbackService resourceFeedbackService,
+                                     KnowledgeBaseService knowledgeBaseService,
                                      @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.profileService = profileService;
         this.mockAiService = mockAiService;
         this.conversationRepository = conversationRepository;
         this.resourceFeedbackService = resourceFeedbackService;
+        this.knowledgeBaseService = knowledgeBaseService;
         // MiMo API Key 由 Python AI 服务持有；Spring 仅在显式开启时使用 Mock。
         this.mockMode = mockMode;
         log.info(">>> AgentOrchestrationService 初始化完成，模式: {}", mockMode ? "MOCK" : "REAL (Python AI → MiMo-v2.5)");
@@ -140,6 +144,14 @@ public class AgentOrchestrationService {
 
         // 获取用户最近的对话记录作为上下文（取最近 20 条用户消息）
         String conversationContext = buildConversationContext(userId, conversationId);
+        String recentConversation = conversationContext.length() > 500
+                ? conversationContext.substring(conversationContext.length() - 500) : conversationContext;
+        String courseQuery = String.join(" ",
+                profile.getShortTermGoal() == null ? "" : profile.getShortTermGoal(),
+                profile.getInterestAreas() == null ? "" : String.join(" ", profile.getInterestAreas()),
+                recentConversation);
+        String courseKnowledgeContext = knowledgeBaseService.buildContext(
+                userId, conversationId, courseQuery, 10);
 
         try {
             // 构造请求体（画像 + 对话上下文）
@@ -151,7 +163,8 @@ public class AgentOrchestrationService {
                     "revision_request", revisionRequest != null ? revisionRequest : "",
                     "revision_action", revisionAction != null ? revisionAction : "none",
                     "revision_scope_json", revisionScopeJson != null ? revisionScopeJson : "{}",
-                    "resource_feedback_json", resourceFeedbackService.rankingJson(userId)
+                    "resource_feedback_json", resourceFeedbackService.rankingJson(userId),
+                    "knowledge_context", courseKnowledgeContext
             );
             String json = objectMapper.writeValueAsString(body);
 

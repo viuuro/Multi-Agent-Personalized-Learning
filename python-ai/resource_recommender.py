@@ -32,6 +32,15 @@ TECH_TERMS = [
     "设计模式", "Git", "Docker",
 ]
 
+COURSE_CHAPTER_TERMS = [
+    "复杂度", "线性表", "链表", "栈", "队列", "数组", "字符串", "KMP", "二叉树",
+    "遍历", "平衡树", "堆", "散列表", "哈希", "图", "最短路径", "拓扑排序", "排序",
+    "查找", "递归", "动态规划", "并查集", "Trie", "B树", "B+树",
+    "数据表示", "补码", "浮点数", "运算器", "ALU", "存储系统", "Cache", "地址映射",
+    "虚拟存储", "指令系统", "寻址方式", "数据通路", "控制器", "流水线", "冒险",
+    "总线", "中断", "DMA", "数字逻辑", "并行", "性能评估",
+]
+
 # 所有 URL 都是具体课程、教材、教程或实践站点，不包含搜索结果页。
 CURATED_RESOURCES = [
     ({"c语言"}, "C 语言参考手册", "https://zh.cppreference.com/w/c/language", "cppreference", "article"),
@@ -42,10 +51,18 @@ CURATED_RESOURCES = [
     ({"数据库", "mysql", "sql"}, "MySQL 官方入门教程", "https://dev.mysql.com/doc/refman/8.4/en/tutorial.html", "MySQL", "course"),
     ({"数据结构", "算法"}, "VisuAlgo：数据结构与算法可视化", "https://visualgo.net/zh", "VisuAlgo", "practice"),
     ({"算法"}, "OI Wiki：算法与数据结构知识库", "https://oi-wiki.org/", "OI Wiki", "article"),
+    ({"数据结构", "算法", "线性表", "链表", "栈", "队列", "树", "图", "排序", "查找"},
+     "OpenDSA：数据结构与算法交互教材", "https://opendsa-server.cs.vt.edu/home/books", "OpenDSA", "course"),
+    ({"数据结构", "算法", "排序", "查找", "图", "字符串"},
+     "Algorithms 4e：算法、代码与练习", "https://algs4.cs.princeton.edu/home/", "Princeton", "course"),
     ({"离散数学"}, "Discrete Mathematics: An Open Introduction", "https://discrete.openmathbooks.org/dmoi3.html", "Open Math Books", "course"),
     ({"线性代数", "矩阵"}, "MIT 18.06 Linear Algebra 课程", "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/", "MIT OpenCourseWare", "course"),
     ({"概率论", "数理统计", "统计"}, "OpenIntro Statistics 免费教材", "https://www.openintro.org/book/os/", "OpenIntro", "course"),
     ({"计算机组成原理", "计算机组成"}, "Nand2Tetris：从逻辑门到计算机系统", "https://www.nand2tetris.org/course", "Nand2Tetris", "course"),
+    ({"计算机组成原理", "计算机组成", "数据表示", "存储系统", "cache", "指令系统", "流水线"},
+     "CS:APP：程序员视角的计算机系统", "https://csapp.cs.cmu.edu/", "CMU", "course"),
+    ({"计算机组成原理", "计算机组成", "cache", "指令系统", "数据通路", "流水线", "中断"},
+     "CS61C：计算机体系结构课程与练习", "https://cs61c.org/", "UC Berkeley", "course"),
     ({"操作系统"}, "OSTEP：Operating Systems: Three Easy Pieces", "https://pages.cs.wisc.edu/~remzi/OSTEP/", "OSTEP", "course"),
     ({"linux"}, "Linux Journey 系统学习路径", "https://linuxjourney.com/", "Linux Journey", "course"),
     ({"计算机网络", "网络", "tcp", "udp"}, "Computer Networking 在线课程讲义与视频", "https://gaia.cs.umass.edu/kurose_ross/online_lectures.htm", "UMass", "course"),
@@ -108,10 +125,14 @@ def resolve_topic(topic: str, tasks: list[str] | None = None, context: str = "")
 def build_focus(topic: str, tasks: list[str] | None = None, context: str = "") -> tuple[str, list[str]]:
     """Build a concise search query and a stable relevance term list."""
     topic = resolve_topic(topic, tasks, context)
-    source = " ".join([topic, *(tasks or [])[:3], (context or "")[-1200:]])
+    # 知识库上下文中包含课程名与完整章节路径；保留更大的尾部窗口以提取章节级关键词。
+    source = " ".join([topic, *(tasks or [])[:3], (context or "")[-5000:]])
     found: list[str] = []
     lowered = source.lower()
     for term in TECH_TERMS:
+        if term.lower() in lowered and term.lower() not in {item.lower() for item in found}:
+            found.append(term)
+    for term in COURSE_CHAPTER_TERMS:
         if term.lower() in lowered and term.lower() not in {item.lower() for item in found}:
             found.append(term)
     fragments = re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,24}|[\u4e00-\u9fff]{2,10}", topic or "")

@@ -69,7 +69,7 @@ public class QuestionAiService {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(pythonAiUrl + "/questions/generate"))
                         .header("Content-Type", "application/json")
-                        .timeout(Duration.ofSeconds(25))
+                        .timeout(Duration.ofSeconds(75))
                         .POST(HttpRequest.BodyPublishers.ofString(body)).build();
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() == 200) {

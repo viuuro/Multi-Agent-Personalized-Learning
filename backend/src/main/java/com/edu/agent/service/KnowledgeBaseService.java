@@ -40,7 +40,7 @@ public class KnowledgeBaseService {
     private static final int MAX_DOCUMENT_CHARS = 500_000;
     private static final int MAX_CHUNK_CHARS = 900;
     private static final int CHUNK_OVERLAP_CHARS = 80;
-    private static final Pattern HEADING_PATTERN = Pattern.compile("^#{1,6}\\s+(.+)$");
+    private static final Pattern HEADING_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+)$");
     private static final Pattern LATIN_TOKEN_PATTERN = Pattern.compile("[a-z0-9_+#.-]{2,}");
     private static final Pattern HAN_PATTERN = Pattern.compile("\\p{IsHan}+");
 
@@ -119,18 +119,29 @@ public class KnowledgeBaseService {
      */
     @Transactional
     public List<KnowledgeDocument> replaceGlobalSeeds(List<SeedDocument> seeds) {
+        return replaceGlobalSeeds("BUILTIN", seeds);
+    }
+
+    /** 按来源类型独立替换全局种子，避免不同课程包相互删除。 */
+    @Transactional
+    public List<KnowledgeDocument> replaceGlobalSeeds(String sourceType, List<SeedDocument> seeds) {
         if (seeds == null || seeds.isEmpty()) {
             throw new IllegalArgumentException("课程种子集合不能为空");
         }
+        String safeSourceType = sourceType == null ? "BUILTIN"
+                : sourceType.trim().toUpperCase(Locale.ROOT);
+        if (!safeSourceType.matches("[A-Z0-9_]{2,30}")) {
+            throw new IllegalArgumentException("课程种子来源类型不合法");
+        }
 
         List<KnowledgeDocument> previousSeeds = documentRepository
-                .findByScopeAndSourceTypeOrderByIdDesc(KnowledgeDocument.SCOPE_GLOBAL, "BUILTIN");
+                .findByScopeAndSourceTypeOrderByIdDesc(KnowledgeDocument.SCOPE_GLOBAL, safeSourceType);
         List<KnowledgeDocument> retainedSeeds = new ArrayList<>(seeds.size());
         Set<Long> retainedIds = new LinkedHashSet<>();
 
         for (SeedDocument seed : seeds) {
             KnowledgeDocument indexed = indexDocument(null, null, KnowledgeDocument.SCOPE_GLOBAL,
-                    "BUILTIN", seed.title(), seed.sourceUri(), seed.license(), seed.content());
+                    safeSourceType, seed.title(), seed.sourceUri(), seed.license(), seed.content());
             retainedSeeds.add(indexed);
             retainedIds.add(indexed.getId());
         }
@@ -206,6 +217,7 @@ public class KnowledgeBaseService {
         String safeQuery = query == null ? "" : query.trim();
         if (safeQuery.isBlank()) return List.of();
         if (safeQuery.length() > 600) safeQuery = safeQuery.substring(0, 600);
+        safeQuery = expandCourseQuery(safeQuery);
         int limit = Math.max(1, Math.min(requestedLimit, 12));
 
         if (mysqlFulltextEnabled && isMySql()) {
@@ -295,10 +307,13 @@ public class KnowledgeBaseService {
     }
 
     private double score(KnowledgeChunk chunk, Set<String> tokens) {
+        String documentTitle = Optional.ofNullable(chunk.getDocumentTitle()).orElse("")
+                .toLowerCase(Locale.ROOT);
         String heading = Optional.ofNullable(chunk.getHeading()).orElse("").toLowerCase(Locale.ROOT);
         String content = chunk.getContent().toLowerCase(Locale.ROOT);
         double score = 0;
         for (String token : tokens) {
+            score += countOccurrences(documentTitle, token) * 6.0;
             score += countOccurrences(heading, token) * 4.0;
             score += Math.min(4, countOccurrences(content, token));
         }
@@ -327,12 +342,19 @@ public class KnowledgeBaseService {
     private List<ChunkDraft> splitIntoChunks(String content) {
         List<Section> sections = new ArrayList<>();
         String currentHeading = "正文";
+        List<String> headingPath = new ArrayList<>();
         StringBuilder body = new StringBuilder();
         for (String line : content.split("\\n")) {
             Matcher headingMatcher = HEADING_PATTERN.matcher(line.trim());
             if (headingMatcher.matches()) {
                 flushSection(sections, currentHeading, body);
-                currentHeading = headingMatcher.group(1).trim();
+                int level = headingMatcher.group(1).length();
+                String heading = headingMatcher.group(2).trim();
+                while (headingPath.size() >= level) headingPath.remove(headingPath.size() - 1);
+                while (headingPath.size() < level - 1) headingPath.add("");
+                headingPath.add(heading);
+                currentHeading = headingPath.stream().filter(value -> !value.isBlank())
+                        .reduce((left, right) -> left + " > " + right).orElse(heading);
             } else {
                 if (!body.isEmpty()) body.append('\n');
                 body.append(line.trim());
@@ -346,6 +368,36 @@ public class KnowledgeBaseService {
         }
         if (chunks.isEmpty()) chunks.add(new ChunkDraft("正文", content));
         return chunks;
+    }
+
+    private String expandCourseQuery(String query) {
+        String lowered = query.toLowerCase(Locale.ROOT);
+        LinkedHashSet<String> aliases = new LinkedHashSet<>();
+        if (containsAny(lowered, "数据结构", "链表", "线性表", "栈", "队列", "二叉树", "并查集",
+                "排序", "查找", "散列", "哈希", "最短路径", "拓扑排序", "最小生成树")) {
+            aliases.add("数据结构");
+            aliases.add("算法");
+        }
+        if (containsAny(lowered, "计组", "计算机组成", "组成原理", "cache", "缓存", "补码", "浮点数",
+                "指令系统", "数据通路", "流水线", "控制信号", "中断", "dma", "总线", "存储器")) {
+            aliases.add("计算机组成原理");
+            aliases.add("计组");
+        }
+        if (lowered.contains("cache")) {
+            aliases.add("高速缓存");
+            aliases.add("地址映射");
+        }
+        if (lowered.contains("哈希")) aliases.add("散列表");
+        if (lowered.contains("散列")) aliases.add("哈希");
+        if (aliases.isEmpty()) return query;
+        return (query + " " + String.join(" ", aliases)).trim();
+    }
+
+    private boolean containsAny(String value, String... terms) {
+        for (String term : terms) {
+            if (value.contains(term)) return true;
+        }
+        return false;
     }
 
     private void flushSection(List<Section> sections, String heading, StringBuilder body) {

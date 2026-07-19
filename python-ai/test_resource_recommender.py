@@ -76,6 +76,34 @@ class ResourceRecommenderTest(unittest.TestCase):
         self.assertTrue(any("OSTEP" in item["title"] for item in resources))
         self.assertTrue(all(_is_concrete_url(item["url"]) for item in resources))
 
+    def test_data_structure_resources_follow_course_and_chapter_focus(self):
+        query, terms = build_focus(
+            "数据结构：图与最短路径",
+            ["比较 Dijkstra 与 Floyd 的适用条件"],
+            "章节=数据结构与算法 > 第9章 图 > 最短路径")
+        self.assertIn("数据结构", query)
+        self.assertIn("最短路径", terms)
+        resources = recommend_resources(
+            "数据结构：图与最短路径", ["完成图算法追踪题"],
+            count=2, session=OfflineSession())
+        self.assertEqual(2, len(resources))
+        self.assertTrue(all(item["platform"] in {
+            "OpenDSA", "Princeton", "VisuAlgo", "OI Wiki"} for item in resources))
+
+    def test_computer_organization_resources_follow_cache_focus(self):
+        query, terms = build_focus(
+            "计算机组成原理：Cache 地址映射",
+            ["完成标记、组号与块内偏移计算"],
+            "章节=计算机组成原理 > 存储系统 > Cache")
+        self.assertIn("计算机组成原理", query)
+        self.assertIn("Cache", terms)
+        resources = recommend_resources(
+            "计算机组成原理：Cache 地址映射", ["分析组相联命中过程"],
+            count=2, session=OfflineSession())
+        self.assertEqual(2, len(resources))
+        self.assertTrue(all(item["platform"] in {
+            "CMU", "UC Berkeley", "Nand2Tetris"} for item in resources))
+
     def test_search_pages_are_rejected(self):
         self.assertFalse(_is_concrete_url("https://search.bilibili.com/all?keyword=Java"))
         self.assertFalse(_is_concrete_url("https://www.bilibili.com/", "B站"))

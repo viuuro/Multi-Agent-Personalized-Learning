@@ -60,6 +60,8 @@ ai:
 knowledge:
   seed:
     software-engineering-enabled: ${KNOWLEDGE_SEED_SOFTWARE_ENGINEERING_ENABLED:true}
+    core-courses-enabled: ${KNOWLEDGE_SEED_CORE_COURSES_ENABLED:true}
+    course-directory: ${KNOWLEDGE_COURSE_DIRECTORY:../knowledge base}
   search:
     mysql-fulltext-enabled: ${KNOWLEDGE_MYSQL_FULLTEXT_ENABLED:true}
 

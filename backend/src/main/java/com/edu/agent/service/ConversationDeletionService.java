@@ -24,6 +24,7 @@ public class ConversationDeletionService {
     private final KnowledgeDocumentRepository knowledgeDocumentRepository;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final PracticeQuestionRepository practiceQuestionRepository;
+    private final LearningResourceFeedbackRepository learningResourceFeedbackRepository;
 
     public ConversationDeletionService(ConversationRepository conversationRepository,
                                        UserProfileRepository userProfileRepository,
@@ -37,7 +38,8 @@ public class ConversationDeletionService {
                                        AgentDecisionRecordRepository agentDecisionRecordRepository,
                                        KnowledgeDocumentRepository knowledgeDocumentRepository,
                                        KnowledgeChunkRepository knowledgeChunkRepository,
-                                       PracticeQuestionRepository practiceQuestionRepository) {
+                                       PracticeQuestionRepository practiceQuestionRepository,
+                                       LearningResourceFeedbackRepository learningResourceFeedbackRepository) {
         this.conversationRepository = conversationRepository;
         this.userProfileRepository = userProfileRepository;
         this.learningPlanRepository = learningPlanRepository;
@@ -51,6 +53,7 @@ public class ConversationDeletionService {
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.practiceQuestionRepository = practiceQuestionRepository;
+        this.learningResourceFeedbackRepository = learningResourceFeedbackRepository;
     }
 
     @Transactional
@@ -71,6 +74,7 @@ public class ConversationDeletionService {
         userProfileRepository.deleteByUserIdAndConversationId(userId, conversationId);
         uploadedFileRecordRepository.deleteByUserIdAndConversationId(userId, conversationId);
         practiceQuestionRepository.deleteByUserIdAndConversationId(userId, conversationId);
+        learningResourceFeedbackRepository.deleteByUserIdAndConversationId(userId, conversationId);
 
         knowledgeChunkRepository.deleteByUserIdAndConversationId(userId, conversationId);
         knowledgeDocumentRepository.deleteByUserIdAndConversationId(userId, conversationId);

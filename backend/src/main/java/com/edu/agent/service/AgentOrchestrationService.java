@@ -58,6 +58,8 @@ public class AgentOrchestrationService {
     private final MockAiService mockAiService;
     /** 对话记录仓库，用于获取用户最近对话上下文 */
     private final ConversationRepository conversationRepository;
+    /** 用户对历史资源的反馈，用于个性化调整后续排序。 */
+    private final LearningResourceFeedbackService resourceFeedbackService;
     /** JSON 序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** Java 11+ 内置的 HTTP 客户端，用于调用 Python AI 服务 */
@@ -76,10 +78,12 @@ public class AgentOrchestrationService {
     public AgentOrchestrationService(ProfileService profileService,
                                      MockAiService mockAiService,
                                      ConversationRepository conversationRepository,
+                                     LearningResourceFeedbackService resourceFeedbackService,
                                      @Value("${ai.mock-enabled:false}") boolean mockMode) {
         this.profileService = profileService;
         this.mockAiService = mockAiService;
         this.conversationRepository = conversationRepository;
+        this.resourceFeedbackService = resourceFeedbackService;
         // MiMo API Key 由 Python AI 服务持有；Spring 仅在显式开启时使用 Mock。
         this.mockMode = mockMode;
         log.info(">>> AgentOrchestrationService 初始化完成，模式: {}", mockMode ? "MOCK" : "REAL (Python AI → MiMo-v2.5)");
@@ -146,7 +150,8 @@ public class AgentOrchestrationService {
                     "existing_plan_json", existingPlanJson != null ? existingPlanJson : "",
                     "revision_request", revisionRequest != null ? revisionRequest : "",
                     "revision_action", revisionAction != null ? revisionAction : "none",
-                    "revision_scope_json", revisionScopeJson != null ? revisionScopeJson : "{}"
+                    "revision_scope_json", revisionScopeJson != null ? revisionScopeJson : "{}",
+                    "resource_feedback_json", resourceFeedbackService.rankingJson(userId)
             );
             String json = objectMapper.writeValueAsString(body);
 
@@ -175,11 +180,15 @@ public class AgentOrchestrationService {
                 if (weeksRaw != null) {
                     for (Map<String, Object> w : weeksRaw) {
                         PlanWeek week = new PlanWeek();
-                        week.setWeekNumber(((Number) w.get("weekNumber")).intValue());
-                        week.setTopic((String) w.get("topic"));
+                        int weekNumber = w.get("weekNumber") instanceof Number number
+                                ? number.intValue() : weeks.size() + 1;
+                        week.setWeekNumber(weekNumber);
+                        week.setTopic(safePlanTopic(String.valueOf(w.getOrDefault("topic", "")), weekNumber));
                         @SuppressWarnings("unchecked")
                         List<String> tasks = (List<String>) w.get("tasks");
-                        week.setTasks(tasks != null ? tasks : List.of());
+                        week.setTasks(tasks == null ? List.of() : tasks.stream()
+                                .filter(task -> task != null && !task.isBlank() && !containsPlaceholder(task))
+                                .toList());
 
                         // 解析资源列表
                         @SuppressWarnings("unchecked")
@@ -187,13 +196,18 @@ public class AgentOrchestrationService {
                         List<Resource> resources = new ArrayList<>();
                         if (resourcesRaw != null) {
                             for (Map<String, Object> r : resourcesRaw) {
-                                resources.add(new Resource(
-                                        (String) r.get("title"),
-                                        (String) r.get("url"),
-                                        (String) r.get("platform"),
-                                        (String) r.get("type")
-                                ));
+                                Resource candidate = new Resource(
+                                        String.valueOf(r.getOrDefault("title", "")),
+                                        String.valueOf(r.getOrDefault("url", "")),
+                                        String.valueOf(r.getOrDefault("platform", "")),
+                                        String.valueOf(r.getOrDefault("type", "article")));
+                                if (isConcreteResource(candidate)) resources.add(candidate);
                             }
+                        }
+                        for (Resource fallback : mockAiService.fallbackResources(week.getTopic())) {
+                            boolean duplicate = resources.stream().anyMatch(
+                                    resource -> resource.getUrl().equals(fallback.getUrl()));
+                            if (!duplicate && resources.size() < 2) resources.add(fallback);
                         }
                         week.setResources(resources);
                         weeks.add(week);
@@ -241,6 +255,37 @@ public class AgentOrchestrationService {
         log.info(">>> Step 2: 资源推荐 (Mock) —— 资源已在 Mock 计划中预设");
         log.info("========== 多智能体协同 (Mock 模式) 结束 ==========");
         return plan;
+    }
+
+    private String safePlanTopic(String topic, int weekNumber) {
+        if (topic != null && !topic.isBlank() && !containsPlaceholder(topic)) return topic.trim();
+        return switch (weekNumber) {
+            case 1 -> "软件工程基础与知识体系";
+            case 2 -> "软件需求、设计与建模";
+            case 3 -> "软件测试与工程实践";
+            default -> "软件项目复盘与能力提升";
+        };
+    }
+
+    private boolean containsPlaceholder(String value) {
+        if (value == null) return true;
+        String compact = value.replaceAll("\\s+", "");
+        return List.of("待评估", "待确定", "尚未确定", "未确定", "未知", "暂无", "未设置", "综合学习")
+                .stream().anyMatch(compact::contains);
+    }
+
+    private boolean isConcreteResource(Resource resource) {
+        if (resource == null || resource.getTitle() == null || resource.getUrl() == null
+                || resource.getPlatform() == null || containsPlaceholder(resource.getTitle())) return false;
+        String url = resource.getUrl().trim();
+        String lowered = url.toLowerCase(java.util.Locale.ROOT);
+        if (!lowered.startsWith("https://") || lowered.contains("/search")
+                || lowered.contains("search?") || lowered.contains("search.htm")
+                || lowered.contains("google.com/search") || lowered.contains("?q=")) return false;
+        if (lowered.contains("bilibili") || resource.getPlatform().contains("B站")) {
+            return url.matches("https://www\\.bilibili\\.com/video/BV[0-9A-Za-z]{10}/?");
+        }
+        return true;
     }
 
     /**

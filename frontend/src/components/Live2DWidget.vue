@@ -73,16 +73,39 @@ const menuX = ref(126)
 const menuY = ref(196)
 let contextMenuCleanup: (() => void) | null = null
 
+function isPointOnModel(clientX: number, clientY: number) {
+  if (!modelReady.value) return false
+  const canvas = live2dRef.value?.querySelector('canvas')
+  const model = getInternalModel()
+  if (!canvas || !model) return false
+
+  const rect = canvas.getBoundingClientRect()
+  if (clientX < rect.left || clientX > rect.right
+    || clientY < rect.top || clientY > rect.bottom) return false
+
+  const rendererScreen = (oml2d as any)?.pixiApp?.app?.renderer?.screen
+  const stageWidth = Number(rendererScreen?.width) || rect.width
+  const stageHeight = Number(rendererScreen?.height) || rect.height
+  const point = {
+    x: (clientX - rect.left) * stageWidth / rect.width,
+    y: (clientY - rect.top) * stageHeight / rect.height,
+  }
+
+  try {
+    return typeof model.containsPoint === 'function' && model.containsPoint(point)
+  } catch {
+    return false
+  }
+}
+
 function attachContextMenu() {
   const openMenu = (event: MouseEvent) => {
     const container = rootRef.value
     if (!container) return
-    const target = event.target as Node | null
-    // 左侧面板会与 Live2D 的固定矩形区域重叠；只处理真正落在模型组件内的右键事件。
-    if (!target || !container.contains(target)) return
     const rect = container.getBoundingClientRect()
-    if (event.clientX < rect.left || event.clientX > rect.right
-      || event.clientY < rect.top || event.clientY > rect.bottom) return
+    // 外层容器不接管鼠标事件，因此按 PIXI 中模型的实际边界判断命中。
+    // 这样既能响应模型右键，又不会遮挡其透明区域下方的左侧功能。
+    if (!isPointOnModel(event.clientX, event.clientY)) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -386,7 +409,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-solid);
   border-radius: 14px;
   background: var(--bg-primary);
-  box-shadow: var(--shadow-card);
+  box-shadow: none;
   backdrop-filter: blur(18px) saturate(1.15);
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
   pointer-events: auto;

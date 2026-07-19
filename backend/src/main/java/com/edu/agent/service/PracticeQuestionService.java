@@ -24,17 +24,20 @@ public class PracticeQuestionService {
     private final LearningPlanRepository planRepository;
     private final ProfileService profileService;
     private final QuestionAiService questionAiService;
+    private final KnowledgeBaseService knowledgeBaseService;
     private final ObjectMapper objectMapper;
 
     public PracticeQuestionService(PracticeQuestionRepository repository,
                                    LearningPlanRepository planRepository,
                                    ProfileService profileService,
                                    QuestionAiService questionAiService,
+                                   KnowledgeBaseService knowledgeBaseService,
                                    ObjectMapper objectMapper) {
         this.repository = repository;
         this.planRepository = planRepository;
         this.profileService = profileService;
         this.questionAiService = questionAiService;
+        this.knowledgeBaseService = knowledgeBaseService;
         this.objectMapper = objectMapper;
     }
 
@@ -55,8 +58,22 @@ public class PracticeQuestionService {
         }
         String taskTitle = week.getTasks().get(taskIndex);
         UserProfile profile = profileService.getCurrentProfile(userId, conversationId);
+        KnowledgeContext knowledge = retrieveKnowledge(
+                userId, conversationId, week.getTopic(), taskTitle);
+        List<QuestionAiService.GeneratedQuestion> history = repository
+                .findTop40ByUserIdAndConversationIdAndWeekNumberAndTaskIndexOrderByCreatedAtDesc(
+                        userId, conversationId, weekNumber, taskIndex)
+                .stream().map(item -> new QuestionAiService.GeneratedQuestion(
+                        item.getQuestionText(), readOptions(item.getOptionsJson()), item.getCorrectAnswer(),
+                        item.getExplanation(), item.getKnowledgePoint(), item.getLearningObjective(),
+                        item.getCognitiveLevel(), readSourceChunkIds(item.getSourceChunkIdsJson()),
+                        item.getQualityScore())).toList();
+        long totalHistoricalCount = repository.countByUserIdAndConversationIdAndWeekNumberAndTaskIndex(
+                userId, conversationId, weekNumber, taskIndex);
         List<QuestionAiService.GeneratedQuestion> generated = questionAiService.generate(
-                profile.getProfileJson(), week.getTopic(), taskTitle, type, difficulty, count);
+                profile.getProfileJson(), week.getTopic(), taskTitle, type, difficulty, count,
+                knowledge.content(), knowledge.chunkIds(), history,
+                (int) Math.min(Integer.MAX_VALUE, totalHistoricalCount));
         if (generated.isEmpty()) throw new IllegalArgumentException("题目生成失败，请稍后重试");
 
         String batchId = UUID.randomUUID().toString();
@@ -76,6 +93,11 @@ public class PracticeQuestionService {
             question.setOptionsJson(writeJson(item.options()));
             question.setCorrectAnswer(item.correctAnswer());
             question.setExplanation(item.explanation());
+            question.setKnowledgePoint(item.knowledgePoint());
+            question.setLearningObjective(item.learningObjective());
+            question.setCognitiveLevel(item.cognitiveLevel());
+            question.setSourceChunkIdsJson(writeJson(item.sourceChunkIds()));
+            question.setQualityScore(item.qualityScore());
             saved.add(repository.save(question));
         }
         return saved.stream().map(this::toView).toList();
@@ -163,8 +185,38 @@ public class PracticeQuestionService {
         catch (Exception e) { return "[]"; }
     }
 
+    private KnowledgeContext retrieveKnowledge(Long userId, String conversationId,
+                                               String weekTopic, String taskTitle) {
+        String query = String.join(" ",
+                weekTopic == null ? "" : weekTopic,
+                taskTitle == null ? "" : taskTitle).trim();
+        List<KnowledgeBaseService.SearchResult> results =
+                knowledgeBaseService.search(userId, conversationId, query, 6);
+        if (results.isEmpty()) return new KnowledgeContext("", List.of());
+
+        StringBuilder context = new StringBuilder();
+        List<Long> chunkIds = new ArrayList<>();
+        for (int index = 0; index < results.size(); index++) {
+            KnowledgeBaseService.SearchResult result = results.get(index);
+            chunkIds.add(result.chunkId());
+            context.append("[资料").append(index + 1)
+                    .append("; chunkId=").append(result.chunkId())
+                    .append("; 文档=").append(result.documentTitle());
+            if (result.heading() != null && !result.heading().isBlank()) {
+                context.append("; 章节=").append(result.heading());
+            }
+            context.append("]\n").append(result.content().trim()).append("\n\n");
+        }
+        return new KnowledgeContext(context.toString().trim(), chunkIds.stream().distinct().toList());
+    }
+
     private List<String> readOptions(String value) {
         try { return objectMapper.readValue(value == null ? "[]" : value, new TypeReference<List<String>>() {}); }
+        catch (Exception e) { return List.of(); }
+    }
+
+    private List<Long> readSourceChunkIds(String value) {
+        try { return objectMapper.readValue(value == null ? "[]" : value, new TypeReference<List<Long>>() {}); }
         catch (Exception e) { return List.of(); }
     }
 
@@ -179,13 +231,19 @@ public class PracticeQuestionService {
                 submitted ? question.getExplanation() : null,
                 submitted ? question.getCorrect() : null,
                 submitted ? question.getScore() : null,
+                question.getKnowledgePoint(), question.getLearningObjective(), question.getCognitiveLevel(),
+                readSourceChunkIds(question.getSourceChunkIdsJson()), question.getQualityScore(),
                 question.getCreatedAt(), question.getUpdatedAt(), question.getSubmittedAt());
     }
+
+    private record KnowledgeContext(String content, List<Long> chunkIds) {}
 
     public record QuestionView(
             Long id, String batchId, String conversationId, Integer weekNumber, Integer taskIndex,
             String weekTopic, String taskTitle, String questionType, String difficulty,
             String questionText, List<String> options, String userAnswer, String status,
             String correctAnswer, String explanation, Boolean correct, Integer score,
+            String knowledgePoint, String learningObjective, String cognitiveLevel,
+            List<Long> sourceChunkIds, Integer qualityScore,
             LocalDateTime createdAt, LocalDateTime updatedAt, LocalDateTime submittedAt) {}
 }

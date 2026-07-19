@@ -147,7 +147,7 @@ function handleDeleteAccount() {
 }
 
 .delete-item:hover {
-  background: rgba(231, 76, 60, 0.1);
+  background: rgba(255, 144, 130, 0.12);
 }
 
 /* 菜单动画 */

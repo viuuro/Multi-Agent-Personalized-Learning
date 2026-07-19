@@ -6,25 +6,7 @@
         <p>{{ chatStore.conversationTitle || '当前学习对话' }}</p>
       </div>
 
-      <div class="practice-stats">
-        <div><strong>{{ questions.length }}</strong><span>全部题目</span></div>
-        <div><strong>{{ submittedCount }}</strong><span>已提交</span></div>
-        <div><strong>{{ draftCount }}</strong><span>作答中</span></div>
-        <div><strong>{{ accuracy }}%</strong><span>正确率</span></div>
-      </div>
-
-      <div class="practice-side-section type-section">
-        <span class="practice-side-title">题型筛选</span>
-        <div class="type-chips">
-          <button
-            v-for="item in typeFilters"
-            :key="item.value"
-            :class="{ active: typeFilter === item.value }"
-            @click="typeFilter = item.value"
-          >{{ item.label }}</button>
-        </div>
-      </div>
-
+      <PracticeStatsPie :questions="questions" />
     </aside>
 
     <main class="practice-main">
@@ -100,6 +82,17 @@
             <div><span>题目看板</span><strong>{{ filteredQuestions.length }}</strong></div>
             <button aria-label="刷新题目" :disabled="loading" @click="loadQuestions"><UiIcon name="refresh" /></button>
           </div>
+          <div class="question-filter-bar" aria-label="题型筛选">
+            <span>题型</span>
+            <div class="type-chips">
+              <button
+                v-for="item in typeFilters"
+                :key="item.value"
+                :class="{ active: typeFilter === item.value }"
+                @click="typeFilter = item.value"
+              >{{ item.label }}</button>
+            </div>
+          </div>
           <div v-if="loading" class="question-empty">正在读取题库…</div>
           <div v-else-if="!filteredQuestions.length" class="question-empty">
             <span>暂无匹配题目</span>
@@ -110,7 +103,11 @@
               v-for="(question, index) in filteredQuestions"
               :key="question.id"
               class="question-nav-item"
-              :class="[{ active: question.id === activeQuestionId }, question.status.toLowerCase()]"
+              :class="[
+                { active: question.id === activeQuestionId },
+                question.status.toLowerCase(),
+                question.status === 'SUBMITTED' ? (question.correct ? 'answer-correct' : 'answer-wrong') : '',
+              ]"
               @click="activeQuestionId = question.id"
             >
               <span class="question-number">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -214,6 +211,7 @@ import type {
   PracticeQuestionType,
 } from '../services/api'
 import UiIcon from './UiIcon.vue'
+import PracticeStatsPie from './PracticeStatsPie.vue'
 
 const chatStore = useChatStore()
 const plan = ref<LearningPlan | null>(null)
@@ -246,13 +244,6 @@ const selectedTaskTitle = computed(() => selectedWeek.value?.tasks[selectedTaskI
 const filteredQuestions = computed(() => questions.value.filter(question =>
   typeFilter.value === 'ALL' || question.questionType === typeFilter.value))
 const activeQuestion = computed(() => questions.value.find(question => question.id === activeQuestionId.value) || filteredQuestions.value[0])
-const submittedCount = computed(() => questions.value.filter(question => question.status === 'SUBMITTED').length)
-const draftCount = computed(() => questions.value.filter(question => question.status === 'DRAFT').length)
-const accuracy = computed(() => {
-  const submitted = questions.value.filter(question => question.status === 'SUBMITTED')
-  if (!submitted.length) return 0
-  return Math.round(submitted.filter(question => question.correct).length * 100 / submitted.length)
-})
 const globalSaveState = computed(() => Object.values(saveStates).includes('saving') ? 'saving' : 'saved')
 
 watch(selectedWeekNumber, () => { selectedTaskIndex.value = 0 })
@@ -389,12 +380,13 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 
 <style scoped>
 .practice-workspace {
-  --practice-success: #7f9f76;
-  --practice-success-soft: rgba(127, 159, 118, .11);
-  --practice-success-border: rgba(127, 159, 118, .27);
-  --practice-danger: #bd756f;
-  --practice-danger-soft: rgba(189, 117, 111, .09);
-  --practice-danger-border: rgba(189, 117, 111, .24);
+  --practice-success: #82d89a;
+  --practice-success-soft: rgba(130, 216, 154, .10);
+  --practice-success-border: rgba(130, 216, 154, .28);
+  --practice-danger: #ff9082;
+  --practice-danger-soft: rgba(255, 144, 130, .10);
+  --practice-danger-border: rgba(255, 144, 130, .28);
+  --practice-unanswered: #cec8c1;
   --practice-selector-column: clamp(190px, 18vw, 260px);
   position: fixed;
   inset: 64px 0 0;
@@ -418,14 +410,8 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 }
 .practice-brand h2 { margin: 0; color: var(--text-secondary); font-size: 14px; font-weight: 700; line-height: 32px; }
 .practice-brand p { margin: 0; color: var(--text-faint); font-size: 11px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.practice-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 16px 0 20px; }
-.practice-stats div { display: flex; flex-direction: column; gap: 2px; padding: 10px 11px; border: 1px solid var(--border-solid); border-radius: 11px; background: var(--ai-bubble-bg); }
-.practice-stats strong { color: var(--accent); font-size: 18px; font-weight: 600; }
-.practice-stats span { color: var(--text-faint); font-size: 10px; }
-.practice-side-section { margin-top: 18px; }
-.practice-side-title { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 14px; font-weight: 700; }
 .type-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
-.type-chips button { width: 100%; height: 34px; padding: 0 3px; border: 1px solid var(--border-solid); border-radius: 10px; background: var(--ai-bubble-bg); color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.type-chips button { width: 100%; height: 27px; padding: 0 2px; border: 1px solid var(--border-solid); border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 9px; cursor: pointer; }
 .type-chips button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-hover); }
 .practice-main { min-width: 0; padding: 38px 28px 22px; overflow: hidden; display: flex; flex-direction: column; }
 .practice-header { min-height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -437,9 +423,9 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .generator-card label { min-width: 0; }
 .generator-card label > span { display: block; margin: 0 0 5px 3px; color: var(--text-faint); font-size: 9px; line-height: 10px; }
 .practice-select { width: 100%; }
-.practice-select :deep(.el-select__wrapper) { min-height: 34px; height: 34px; padding: 0 26px 0 9px; border-radius: 9px; background: var(--bg-input); box-shadow: 0 0 0 1px var(--border-solid) inset; color: var(--text-secondary); font-size: 11px; transition: background .2s, box-shadow .2s; }
+.practice-select :deep(.el-select__wrapper) { min-height: 34px; height: 34px; box-sizing: border-box; padding: 0 26px 0 9px; border: 1px solid var(--border-solid); border-radius: 9px; background: var(--bg-input); box-shadow: none; color: var(--text-secondary); font-size: 11px; transition: background .2s, border-color .2s; }
 .practice-select :deep(.el-select__wrapper:hover) { background: var(--bg-hover); }
-.practice-select :deep(.el-select__wrapper.is-focused) { background: var(--bg-input); box-shadow: 0 0 0 1px var(--accent) inset; }
+.practice-select :deep(.el-select__wrapper.is-focused) { border-color: var(--accent); background: var(--bg-input); box-shadow: none; }
 .practice-select :deep(.el-select__selected-item) { color: var(--text-secondary); font-size: 11px; }
 .practice-select :deep(.el-select__caret) { color: var(--text-faint); }
 .generate-question-btn { height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--accent); color: white; font-size: 11px; cursor: pointer; white-space: nowrap; }
@@ -454,19 +440,24 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .question-board-header strong { color: var(--accent); }
 .question-board-header button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border-solid); border-radius: 8px; background: transparent; color: var(--accent); cursor: pointer; }
 .question-board-header .ui-icon { width: 13px; }
-.question-list { overflow-y: auto; padding: 7px; }
+.question-filter-bar { flex: 0 0 auto; padding: 8px 8px 7px; border-bottom: 1px solid var(--border-solid); }
+.question-filter-bar > span { display: block; margin: 0 0 5px 3px; color: var(--text-faint); font-size: 9px; }
+.question-list { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding: 7px; }
 .question-nav-item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
 .question-nav-item:hover, .question-nav-item.active { background: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.question-nav-item.answer-correct { border-color: var(--practice-success); background: var(--practice-success-soft); }
+.question-nav-item.answer-wrong { border-color: var(--practice-danger); background: var(--practice-danger-soft); }
 .question-number { flex: 0 0 24px; color: var(--accent); font-size: 10px; font-variant-numeric: tabular-nums; }
 .question-nav-copy { min-width: 0; flex: 1; }
 .question-nav-copy b, .question-nav-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .question-nav-copy b { margin-bottom: 3px; font-size: 10px; font-weight: 600; }
 .question-nav-copy small { color: var(--text-faint); font-size: 9px; }
-.question-nav-item > i { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; }
+.question-nav-item > i { width: 17px; height: 17px; flex: 0 0 17px; display: grid; place-items: center; border-radius: 50%; }
 .question-nav-item > i.correct { background: var(--practice-success-soft); color: var(--practice-success); }
 .question-nav-item > i.wrong { background: var(--practice-danger-soft); color: var(--practice-danger); }
 .question-nav-item > i .ui-icon { width: 10px; }
-.draft-dot { width: 6px !important; height: 6px !important; background: var(--border-solid); }
+.draft-dot { background: transparent; }
+.draft-dot::after { width: 6px; height: 6px; border-radius: 50%; background: var(--practice-unanswered); content: ''; }
 .question-empty, .answer-empty { flex: 1; display: grid; place-content: center; text-align: center; color: var(--text-faint); }
 .question-empty span { font-size: 12px; }
 .question-empty p, .answer-empty p { margin: 5px 0 0; font-size: 10px; }
@@ -512,6 +503,16 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 </style>
 
 <style>
+[data-theme="dark"] .practice-workspace {
+  --practice-success: #82d89a;
+  --practice-success-soft: rgba(130, 216, 154, .14);
+  --practice-success-border: rgba(130, 216, 154, .34);
+  --practice-danger: #ff9082;
+  --practice-danger-soft: rgba(255, 144, 130, .14);
+  --practice-danger-border: rgba(255, 144, 130, .34);
+  --practice-unanswered: #6e6864;
+}
+
 .practice-select-popper.el-popper {
   padding: 5px 0 !important;
   border: 1px solid var(--border-solid) !important;

@@ -178,6 +178,11 @@ class PersistenceRoundTripTest {
         question.setOptionsJson("[\"FCFS\",\"RR\",\"SJF\",\"优先级\"]");
         question.setCorrectAnswer("B");
         question.setExplanation("RR 使用固定时间片轮转执行进程。");
+        question.setKnowledgePoint("时间片轮转调度");
+        question.setLearningObjective("能够根据调度规则判断进程执行顺序");
+        question.setCognitiveLevel("应用与分析");
+        question.setSourceChunkIdsJson("[71,72]");
+        question.setQualityScore(92);
         question.setUserAnswer("B");
         question.setStatus(PracticeQuestion.STATUS_SUBMITTED);
         question.setCorrect(true);
@@ -190,6 +195,11 @@ class PersistenceRoundTripTest {
         assertThat(restored.getConversationId()).isEqualTo("practice-104");
         assertThat(restored.getUserAnswer()).isEqualTo("B");
         assertThat(restored.getScore()).isEqualTo(100);
+        assertThat(restored.getKnowledgePoint()).isEqualTo("时间片轮转调度");
+        assertThat(restored.getLearningObjective()).contains("判断进程执行顺序");
+        assertThat(restored.getCognitiveLevel()).isEqualTo("应用与分析");
+        assertThat(restored.getSourceChunkIdsJson()).isEqualTo("[71,72]");
+        assertThat(restored.getQualityScore()).isEqualTo(92);
         assertThat(practiceQuestionRepository
                 .findByUserIdAndConversationIdOrderByCreatedAtDescIdAsc(104L, "practice-104"))
                 .singleElement().extracting(PracticeQuestion::getTaskTitle)

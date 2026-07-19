@@ -34,6 +34,8 @@ export interface ResourceItem {
   type: string       // video / course / article / practice
 }
 
+export type ResourceFeedbackEvent = 'CLICK' | 'HELPFUL' | 'NOT_HELPFUL' | 'COMPLETED'
+
 /** 完整的 4 周学习计划 */
 export interface LearningPlan {
   weeks: LearningPlanWeek[]
@@ -61,6 +63,11 @@ export interface PracticeQuestion {
   explanation?: string
   correct?: boolean
   score?: number
+  knowledgePoint?: string
+  learningObjective?: string
+  cognitiveLevel?: string
+  sourceChunkIds?: number[]
+  qualityScore?: number
   createdAt: string
   updatedAt: string
   submittedAt?: string
@@ -319,6 +326,22 @@ export async function parseFileApi(
     body: formData,
   })
   return res.data
+}
+
+export async function recordResourceFeedbackApi(
+  conversationId: string,
+  resource: ResourceItem,
+  event: ResourceFeedbackEvent,
+): Promise<void> {
+  await request<void>('/resources/feedback', {
+    method: 'POST',
+    body: JSON.stringify({
+      conversationId,
+      url: resource.url,
+      title: resource.title,
+      event,
+    }),
+  })
 }
 
 export async function fetchPracticeQuestionsApi(conversationId: string): Promise<PracticeQuestion[]> {

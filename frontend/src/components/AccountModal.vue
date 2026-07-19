@@ -222,7 +222,7 @@ onUnmounted(() => {
 }
 
 .success-msg {
-  color: #67c23a;
+  color: var(--success);
   font-size: 13px;
   text-align: center;
   margin-top: 12px;

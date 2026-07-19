@@ -63,19 +63,19 @@
             </ul>
             <h4>推荐资源</h4>
             <div class="resource-list">
-              <a
-                v-for="(res, j) in week.resources"
-                :key="j"
-                :href="res.url"
-                target="_blank"
-                class="resource-link"
-              >
-                <el-tag :type="res.type === 'video' ? 'danger' : 'primary'" size="small">
-                  {{ res.platform }}
-                </el-tag>
-                <span class="resource-title">{{ res.title }}</span>
-                <UiIcon name="link" />
-              </a>
+              <div v-for="(res, j) in week.resources" :key="j" class="resource-item">
+                <a :href="res.url" target="_blank" class="resource-link" @click="trackResource(res, 'CLICK')">
+                  <el-tag :type="res.type === 'video' ? 'danger' : 'primary'" size="small">
+                    {{ res.platform }}
+                  </el-tag>
+                  <span class="resource-title">{{ res.title }}</span>
+                  <UiIcon name="link" />
+                </a>
+                <div class="resource-feedback">
+                  <button type="button" @click="trackResource(res, 'HELPFUL')">有帮助</button>
+                  <button type="button" @click="trackResource(res, 'NOT_HELPFUL')">不适合</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -109,19 +109,19 @@
             </ul>
             <h4>推荐资源</h4>
             <div class="resource-list">
-              <a
-                v-for="(res, j) in week.resources"
-                :key="j"
-                :href="res.url"
-                target="_blank"
-                class="resource-link"
-              >
-                <el-tag :type="res.type === 'video' ? 'danger' : 'primary'" size="small">
-                  {{ res.platform }}
-                </el-tag>
-                <span class="resource-title">{{ res.title }}</span>
-                <UiIcon name="link" />
-              </a>
+              <div v-for="(res, j) in week.resources" :key="j" class="resource-item">
+                <a :href="res.url" target="_blank" class="resource-link" @click="trackResource(res, 'CLICK')">
+                  <el-tag :type="res.type === 'video' ? 'danger' : 'primary'" size="small">
+                    {{ res.platform }}
+                  </el-tag>
+                  <span class="resource-title">{{ res.title }}</span>
+                  <UiIcon name="link" />
+                </a>
+                <div class="resource-feedback">
+                  <button type="button" @click="trackResource(res, 'HELPFUL')">有帮助</button>
+                  <button type="button" @click="trackResource(res, 'NOT_HELPFUL')">不适合</button>
+                </div>
+              </div>
             </div>
           </div>
         </el-popover>
@@ -135,8 +135,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { fetchPlan, savePlanApi } from '../services/api'
-import type { LearningPlan } from '../services/api'
+import { fetchPlan, recordResourceFeedbackApi, savePlanApi } from '../services/api'
+import type { LearningPlan, ResourceFeedbackEvent, ResourceItem } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { useChatStore } from '../stores/chatStore'
 import UiIcon from './UiIcon.vue'
@@ -232,6 +232,14 @@ function addResource(wi: number) {
 
 function removeResource(wi: number, ri: number) {
   editablePlan.value!.weeks[wi].resources.splice(ri, 1)
+}
+
+function trackResource(resource: ResourceItem, event: ResourceFeedbackEvent) {
+  const conversationId = chatStore.conversationId
+  if (!conversationId) return
+  void recordResourceFeedbackApi(conversationId, resource, event).catch((error) => {
+    console.warn('资源反馈记录失败:', error)
+  })
 }
 
 defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
@@ -425,7 +433,7 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
 .task-list li .ui-icon {
   width: 14px;
   height: 14px;
-  color: #67c23a;
+  color: var(--success);
   margin-top: 2px;
   flex-shrink: 0;
 }
@@ -434,6 +442,12 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.resource-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .resource-link {
@@ -456,6 +470,27 @@ defineExpose({ generatePlan, hasPlan, plan, saveEdit, cancelEdit, setPlan })
   background: var(--bg-hover);
 }
 .resource-link .ui-icon { width: 13px; height: 13px; }
+
+.resource-feedback {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 5px 2px;
+}
+
+.resource-feedback button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.resource-feedback button:hover {
+  color: var(--accent);
+}
 
 .resource-title {
   flex: 1;

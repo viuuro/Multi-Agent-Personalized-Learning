@@ -706,8 +706,8 @@ function onLoggedIn(user: AuthUser) {
   --code-bg: #282c34;
   --code-text: #abb2bf;
   --scrollbar-thumb: #D5CFC8;
-  --danger: #E74C3C;
-  --success: #67c23a;
+  --danger: #ff9082;
+  --success: #82d89a;
   --accent: #D4916F;
   --accent-dark: #B87858;
   --accent-glow: rgba(212, 145, 111, 0.35);
@@ -737,8 +737,8 @@ function onLoggedIn(user: AuthUser) {
   --code-bg: #201c1a;
   --code-text: #d0c8c0;
   --scrollbar-thumb: #4a4440;
-  --danger: #ff6b6b;
-  --success: #67c23a;
+  --danger: #ff9082;
+  --success: #82d89a;
   --accent: #d4916f;
   --accent-dark: #b87858;
   --accent-glow: rgba(212, 145, 111, 0.3);
@@ -851,7 +851,7 @@ input:-webkit-autofill:active {
 /* ===== 顶部标题栏 ===== */
 .app-header {
   position: relative;
-  z-index: 100;
+  z-index: 1200;
   background: transparent;
   padding: 12px 24px;
   display: flex;
@@ -1223,7 +1223,7 @@ input:-webkit-autofill:active {
   height: 15px;
 }
 .conversation-context-action:hover {
-  background: rgba(231, 76, 60, 0.1);
+  background: rgba(255, 144, 130, 0.12);
 }
 .conversation-context-action.danger {
   color: var(--danger);

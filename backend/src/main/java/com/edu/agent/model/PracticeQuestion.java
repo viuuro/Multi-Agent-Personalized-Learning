@@ -59,6 +59,21 @@ public class PracticeQuestion {
     @Column(columnDefinition = "TEXT")
     private String explanation;
 
+    @Column(name = "knowledge_point", length = 255)
+    private String knowledgePoint;
+
+    @Column(name = "learning_objective", length = 500)
+    private String learningObjective;
+
+    @Column(name = "cognitive_level", length = 64)
+    private String cognitiveLevel;
+
+    @Column(name = "source_chunk_ids_json", columnDefinition = "TEXT")
+    private String sourceChunkIdsJson;
+
+    @Column(name = "quality_score")
+    private Integer qualityScore;
+
     @Column(name = "user_answer", columnDefinition = "TEXT")
     private String userAnswer;
 
@@ -116,6 +131,16 @@ public class PracticeQuestion {
     public void setCorrectAnswer(String correctAnswer) { this.correctAnswer = correctAnswer; }
     public String getExplanation() { return explanation; }
     public void setExplanation(String explanation) { this.explanation = explanation; }
+    public String getKnowledgePoint() { return knowledgePoint; }
+    public void setKnowledgePoint(String knowledgePoint) { this.knowledgePoint = knowledgePoint; }
+    public String getLearningObjective() { return learningObjective; }
+    public void setLearningObjective(String learningObjective) { this.learningObjective = learningObjective; }
+    public String getCognitiveLevel() { return cognitiveLevel; }
+    public void setCognitiveLevel(String cognitiveLevel) { this.cognitiveLevel = cognitiveLevel; }
+    public String getSourceChunkIdsJson() { return sourceChunkIdsJson; }
+    public void setSourceChunkIdsJson(String sourceChunkIdsJson) { this.sourceChunkIdsJson = sourceChunkIdsJson; }
+    public Integer getQualityScore() { return qualityScore; }
+    public void setQualityScore(Integer qualityScore) { this.qualityScore = qualityScore; }
     public String getUserAnswer() { return userAnswer; }
     public void setUserAnswer(String userAnswer) { this.userAnswer = userAnswer; }
     public String getStatus() { return status; }

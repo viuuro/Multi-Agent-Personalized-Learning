@@ -18,6 +18,7 @@ Spring Boot 后端通过 HTTP 调用本服务。
 from urllib.parse import quote_plus, urlencode
 from pathlib import Path
 import requests as http_requests
+import asyncio
 import json
 import os
 import logging
@@ -26,7 +27,7 @@ from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # LangChain 核心组件
 from langchain_openai import ChatOpenAI          # LLM 调用客户端（兼容 MiMo-v2.5）
@@ -49,6 +50,8 @@ from intelligence import (
     parse_json_object,
     rule_based_turn_analysis,
 )
+from question_pipeline import generate_questions_pipeline
+from resource_recommender import contains_placeholder, recommend_resources, resolve_topic
 
 # ===== 配置 =====
 # 小米 MiMo-v2.5 API 密钥，从环境变量读取（必须设置，否则降级为 Mock 模式）
@@ -102,6 +105,27 @@ review_llm = ChatOpenAI(
     max_retries=1,
 )
 
+# 出题采用独立参数：生成阶段保留适度多样性，蓝图和审核阶段保持稳定。
+question_llm = ChatOpenAI(
+    model=MODEL_NAME,
+    openai_api_key=MIMO_API_KEY or "not-configured",
+    openai_api_base=MIMO_BASE_URL,
+    temperature=0.45,
+    max_tokens=4096,
+    request_timeout=8,
+    max_retries=0,
+)
+
+question_review_llm = ChatOpenAI(
+    model=MODEL_NAME,
+    openai_api_key=MIMO_API_KEY or "not-configured",
+    openai_api_base=MIMO_BASE_URL,
+    temperature=0.1,
+    max_tokens=4096,
+    request_timeout=8,
+    max_retries=0,
+)
+
 app = FastAPI(title="Edu AI Service")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -131,6 +155,7 @@ class PlanRequest(BaseModel):
     revision_request: str = ""
     revision_action: str = "none"
     revision_scope_json: str = ""
+    resource_feedback_json: str = ""
 
 
 class ConversationTitleRequest(BaseModel):
@@ -160,6 +185,10 @@ class QuestionGenerationRequest(BaseModel):
     question_type: str = "SINGLE_CHOICE"
     difficulty: str = "MEDIUM"
     count: int = 3
+    knowledge_context: str = ""
+    source_chunk_ids: list[int] = Field(default_factory=list)
+    avoid_question_texts: list[str] = Field(default_factory=list)
+    avoid_option_sets: list[list[str]] = Field(default_factory=list)
 
 
 # ===== 工具函数 =====
@@ -715,7 +744,8 @@ plan_prompt = ChatPromptTemplate.from_messages([
 5. 主题要具体，不要泛泛而谈（好："C++基础语法与面向对象"，差："编程基础入门"）。
 6. 如果存在现有计划和修订要求，保留仍然有价值的内容，针对要求调整目标、难度、顺序和任务。
 7. 任务必须具体、可执行、可检查，四周应形成渐进路径。
-8. 只返回 JSON，不要任何其他文字。"""),
+8. “待评估、待确定、尚未确定、暂无、未知”等是画像占位值，不是学习方向，禁止把它们写入主题或任务。如果没有明确方向，使用“软件工程基础”作为可执行的默认方向。
+9. 只返回 JSON，不要任何其他文字。"""),
     ("user", """学生画像：
 - 知识基础：{knowledgeBase}/10
 - 学习风格：{cognitiveStyle}
@@ -757,6 +787,8 @@ def generate_plan(
     返回:
         周计划列表
     """
+    profile = _sanitize_plan_profile(profile, conversation_context)
+
     # 构建上下文提示
     ctx = ""
     if conversation_context:
@@ -787,7 +819,7 @@ def generate_plan(
                 continue
             topic = str(week.get("topic", "")).strip()
             tasks = normalize_string_list(week.get("tasks"))
-            if not topic or len(tasks) < 2:
+            if not topic or contains_placeholder(topic) or len(tasks) < 2:
                 continue
             normalized.append({
                 "weekNumber": max(1, min(4, safe_int(week.get("weekNumber"), index))),
@@ -805,9 +837,12 @@ def generate_plan(
 
 def _default_plan(profile: dict) -> list:
     """默认学习计划（API 调用失败时的降级方案）"""
-    topic = (profile.get("interestAreas") or ["综合学习"])[0]
+    interests = [str(item).strip() for item in profile.get("interestAreas", [])
+                 if str(item).strip() and not contains_placeholder(str(item))]
+    topic = resolve_topic(interests[0] if interests else "", context=str(profile.get("shortTermGoal", "")))
+    introductory_topic = f"{topic}入门" if topic.endswith("基础") else f"{topic}基础入门"
     return [
-        {"weekNumber": 1, "topic": f"{topic}基础入门",
+        {"weekNumber": 1, "topic": introductory_topic,
          "tasks": [f"了解{topic}的核心概念", "完成基础知识框架搭建", "阅读入门教材前3章", "整理学习笔记"]},
         {"weekNumber": 2, "topic": f"{topic}进阶学习",
          "tasks": [f"深入学习{topic}的核心原理", "完成配套练习", "阅读进阶教材", "参与在线讨论"]},
@@ -818,7 +853,22 @@ def _default_plan(profile: dict) -> list:
     ]
 
 
-def generate_practice_questions(req: QuestionGenerationRequest) -> list[dict]:
+def _sanitize_plan_profile(profile: dict | None, conversation_context: str = "") -> dict:
+    """Remove profile placeholders before they can become plan topics or resource queries."""
+    safe = dict(profile) if isinstance(profile, dict) else {}
+    interests = [str(item).strip() for item in safe.get("interestAreas", [])
+                 if str(item).strip() and not contains_placeholder(str(item))]
+    direction = resolve_topic(interests[0] if interests else "", context=conversation_context)
+    safe["interestAreas"] = interests or [direction]
+    safe["weaknessPoints"] = [str(item).strip() for item in safe.get("weaknessPoints", [])
+                              if str(item).strip() and not contains_placeholder(str(item))]
+    goal = str(safe.get("shortTermGoal", "")).strip()
+    if not goal or contains_placeholder(goal):
+        safe["shortTermGoal"] = f"建立{direction}知识框架并明确下一阶段方向"
+    return safe
+
+
+def _legacy_generate_practice_questions(req: QuestionGenerationRequest) -> list[dict]:
     """题目生成智能体：围绕计划中的单个小任务生成可直接作答的结构化题目。"""
     count = max(1, min(req.count, 10))
     type_rules = {
@@ -877,6 +927,11 @@ def generate_practice_questions(req: QuestionGenerationRequest) -> list[dict]:
     except Exception as exc:
         logger.warning("题目生成智能体失败，将由 Spring 服务降级: %s", exc)
     return []
+
+
+def generate_practice_questions(req: QuestionGenerationRequest) -> list[dict]:
+    """知识库约束的蓝图式出题流水线；失败时由 Spring 层补充降级题目。"""
+    return generate_questions_pipeline(req, question_llm, question_review_llm)
 
 
 # ===== 资源推荐智能体 =====
@@ -998,7 +1053,7 @@ def _extract_search_keywords(topic: str, context: str = "") -> str:
     return topic
 
 
-def _find_real_resources(topic: str, context: str = "") -> list[dict]:
+def _legacy_find_real_resources(topic: str, context: str = "") -> list[dict]:
     """
     为给定主题查找真实可用的学习资源。
     结合对话上下文提取精准搜索关键词，优先从 B站 API 查找真实视频。
@@ -1048,13 +1103,22 @@ def _find_real_resources(topic: str, context: str = "") -> list[dict]:
     return resources[:2]
 
 
-def enrich_resources(week: dict, context: str = "") -> dict:
+def _find_real_resources(topic: str, context: str = "", tasks: list[str] | None = None,
+                         feedback_scores: dict[str, float] | None = None) -> list[dict]:
+    """检索并验证具体资源；不会返回搜索结果页。"""
+    return recommend_resources(
+        topic, tasks=tasks, context=context, count=2, feedback_scores=feedback_scores)
+
+
+def enrich_resources(week: dict, context: str = "",
+                     feedback_scores: dict[str, float] | None = None) -> dict:
     """
     为单周计划推荐 2 个学习资源。
     结合对话上下文让资源更贴合用户实际关心的内容。
     """
     topic = week.get('topic', '学习')
-    week["resources"] = _find_real_resources(topic, context)
+    tasks = week.get("tasks") if isinstance(week.get("tasks"), list) else []
+    week["resources"] = _find_real_resources(topic, context, tasks, feedback_scores)
     return week
 
 
@@ -1153,6 +1217,13 @@ async def plan(req: PlanRequest):
         req.revision_request,
     )
     revision_scope = parse_json_object(req.revision_scope_json)
+    raw_feedback = parse_json_object(req.resource_feedback_json)
+    feedback_scores = {}
+    for url, value in raw_feedback.items():
+        try:
+            feedback_scores[str(url)] = float(value)
+        except (TypeError, ValueError):
+            continue
     weeks = merge_plan_revision(
         req.existing_plan_json,
         weeks,
@@ -1176,7 +1247,7 @@ async def plan(req: PlanRequest):
         if req.revision_action in {"modify_week", "adjust_resources"} and changed_weeks and number not in changed_weeks:
             enriched.append(existing_weeks.get(number, week))
         else:
-            enriched.append(enrich_resources(week, context))
+            enriched.append(enrich_resources(week, context, feedback_scores))
     weeks = enriched
     return {"weeks": weeks}
 

@@ -1,28 +1,6 @@
 <template>
   <main class="auth-page">
-    <a class="auth-brand" href="#" aria-label="玛丽学习助手首页" @click.prevent>
-      <span class="brand-mark"><UiIcon name="sparkles" /></span>
-      <span>MARIE</span>
-    </a>
-
     <section class="auth-content" aria-labelledby="auth-title">
-      <div class="auth-mode-switch" role="tablist" aria-label="登录或注册">
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="mode === 'login'"
-          :class="{ active: mode === 'login' }"
-          @click="switchToLogin"
-        >登录</button>
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="mode === 'register'"
-          :class="{ active: mode === 'register' }"
-          @click="switchToRegister"
-        >注册</button>
-      </div>
-
       <header class="auth-heading">
         <h1 id="auth-title">{{ mode === 'login' ? '欢迎回来' : '创建账号' }}</h1>
         <p>{{ mode === 'login' ? '继续你的学习旅程' : '开始建立专属于你的学习空间' }}</p>
@@ -68,7 +46,6 @@
 
         <button class="auth-submit" type="submit" :disabled="loading">
           <span>{{ loading ? (mode === 'login' ? '登录中...' : '注册中...') : (mode === 'login' ? '登录' : '创建账号') }}</span>
-          <UiIcon v-if="!loading" name="send" />
         </button>
       </form>
 
@@ -88,7 +65,6 @@
 import { ref } from 'vue'
 import { loginApi, registerApi } from '../services/api'
 import type { AuthUser } from '../services/api'
-import UiIcon from '../components/UiIcon.vue'
 
 const emit = defineEmits<{
   (e: 'logged-in', user: AuthUser): void
@@ -152,6 +128,7 @@ async function handleRegister() {
     loading.value = false
   }
 }
+
 </script>
 
 <style scoped>
@@ -159,79 +136,18 @@ async function handleRegister() {
   position: relative;
   display: grid;
   min-height: 100dvh;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   padding: 34px clamp(24px, 5vw, 72px) 26px;
   overflow: hidden;
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at 50% 42%, var(--accent-hover), transparent 34%),
-    var(--bg-primary);
+  background: var(--bg-primary);
 }
-
-.auth-brand {
-  display: inline-flex;
-  width: max-content;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .16em;
-  text-decoration: none;
-}
-
-.brand-mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  border-radius: 10px;
-  color: var(--accent);
-}
-
-.brand-mark .ui-icon { width: 15px; height: 15px; }
 
 .auth-content {
   align-self: center;
   width: min(100%, 360px);
-  margin: 28px auto 38px;
+  margin: 0 auto;
 }
-
-.auth-mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-bottom: 38px;
-  border-bottom: 1px solid var(--border-solid);
-}
-
-.auth-mode-switch button {
-  position: relative;
-  height: 40px;
-  border: 0;
-  color: var(--text-faint);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-}
-
-.auth-mode-switch button::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 1px;
-  background: transparent;
-}
-
-.auth-mode-switch button.active {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.auth-mode-switch button.active::after { background: var(--accent); }
 
 .auth-heading { margin-bottom: 30px; text-align: center; }
 .auth-heading h1 {
@@ -280,6 +196,22 @@ async function handleRegister() {
   border-color: color-mix(in srgb, var(--accent) 68%, var(--border-solid));
 }
 
+.auth-field :deep(.el-input__inner) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.auth-field :deep(.el-input__inner:-webkit-autofill),
+.auth-field :deep(.el-input__inner:-webkit-autofill:hover),
+.auth-field :deep(.el-input__inner:-webkit-autofill:focus) {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
 .auth-error {
   margin: -2px 0 0;
   color: var(--danger);
@@ -307,7 +239,6 @@ async function handleRegister() {
   transition: background .18s ease, opacity .18s ease;
 }
 
-.auth-submit .ui-icon { width: 14px; height: 14px; }
 .auth-submit:hover:not(:disabled) { background: var(--accent-dark); }
 .auth-submit:disabled { opacity: .55; cursor: not-allowed; }
 
@@ -339,13 +270,12 @@ async function handleRegister() {
 @media (max-width: 520px) {
   .auth-page { padding: 24px 20px 20px; }
   .auth-content { margin-block: 22px 28px; }
-  .auth-mode-switch { margin-bottom: 30px; }
 }
 
 @media (max-height: 650px) {
   .auth-page { overflow-y: auto; }
   .auth-content { align-self: start; margin-block: 28px; }
-  .auth-mode-switch { margin-bottom: 24px; }
   .auth-heading { margin-bottom: 22px; }
 }
+
 </style>

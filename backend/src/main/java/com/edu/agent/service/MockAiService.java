@@ -8,10 +8,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -20,7 +19,7 @@ import java.util.Map;
  * 本服务模拟三个核心能力：
  *   1. 画像提取：根据用户消息中的关键词推断 6 维画像
  *   2. 对话回复：生成包含画像分析的预设回复文本
- *   3. 计划生成：生成包含 B站/慕课链接的 4 周学习计划
+ *   3. 计划生成：生成包含具体官方课程、教材或已验证视频的 4 周学习计划
  *
  * 切换到真实 MiMo-v2.5 API：
  *   设置环境变量 MIMO_API_KEY=your-key，系统自动切换到 Python AI 服务
@@ -138,23 +137,23 @@ public class MockAiService {
     public LearningPlan mockPlanGeneration(UserProfile profile) {
         LearningPlan plan = new LearningPlan();
 
-        // 用用户最感兴趣的第一个领域作为学习主题
-        String mainTopic = profile.getInterestAreas().isEmpty() ? "综合学习" : profile.getInterestAreas().get(0);
-        // URL 编码主题关键词，防止中文字符导致链接失效
-        String encodedTopic = URLEncoder.encode(mainTopic, StandardCharsets.UTF_8);
+        // 占位值不是学习方向；尚无有效画像时使用项目领域内可执行的默认主题。
+        String mainTopic = profile.getInterestAreas().stream()
+                .filter(this::isMeaningfulTopic)
+                .findFirst().orElse("软件工程基础");
+        String introductoryTopic = mainTopic.endsWith("基础")
+                ? mainTopic + "入门"
+                : mainTopic + "基础入门";
 
         // 第 1 周：基础入门
-        PlanWeek week1 = createWeek(1, mainTopic + "基础入门",
+        PlanWeek week1 = createWeek(1, introductoryTopic,
                 Arrays.asList(
                         "了解" + mainTopic + "的核心概念和知识体系",
                         "完成基础知识框架搭建",
                         "阅读入门教材前3章",
                         "整理学习笔记和思维导图"
                 ),
-                Arrays.asList(
-                        new Resource("【B站】" + mainTopic + "零基础入门到精通教程", "https://search.bilibili.com/all?keyword=" + encodedTopic + "入门教程", "B站", "video"),
-                        new Resource("【中国大学MOOC】" + mainTopic + "基础课程", "https://www.icourse163.org/search.htm?keyword=" + encodedTopic, "中国大学MOOC", "course")
-                ));
+                fallbackResources(mainTopic));
 
         // 第 2 周：进阶学习
         PlanWeek week2 = createWeek(2, mainTopic + "进阶学习",
@@ -164,10 +163,7 @@ public class MockAiService {
                         "阅读进阶教材第4-6章",
                         "参与在线讨论和答疑"
                 ),
-                Arrays.asList(
-                        new Resource("【B站】" + mainTopic + "进阶实战教程", "https://search.bilibili.com/all?keyword=" + encodedTopic + "进阶", "B站", "video"),
-                        new Resource("【中国大学MOOC】" + mainTopic + "进阶课程", "https://www.icourse163.org/search.htm?keyword=" + encodedTopic + "进阶", "中国大学MOOC", "course")
-                ));
+                fallbackResources(mainTopic));
 
         // 第 3 周：实战应用
         PlanWeek week3 = createWeek(3, mainTopic + "实战应用",
@@ -177,10 +173,7 @@ public class MockAiService {
                         "编写学习报告和技术总结",
                         "与同学或同行交流心得"
                 ),
-                Arrays.asList(
-                        new Resource("【B站】" + mainTopic + "项目实战教程", "https://search.bilibili.com/all?keyword=" + encodedTopic + "项目实战", "B站", "video"),
-                        new Resource("【GitHub】" + mainTopic + "学习资源合集", "https://github.com/search?q=" + encodedTopic + "+tutorial&type=repositories", "GitHub", "community")
-                ));
+                fallbackResources(mainTopic));
 
         // 第 4 周：总结提升
         PlanWeek week4 = createWeek(4, mainTopic + "总结提升",
@@ -190,13 +183,105 @@ public class MockAiService {
                         "制定下一阶段学习目标",
                         "撰写学习总结和反思"
                 ),
-                Arrays.asList(
-                        new Resource("【B站】" + mainTopic + "复习总结与面试题讲解", "https://search.bilibili.com/all?keyword=" + encodedTopic + "复习总结", "B站", "video"),
-                        new Resource("【LeetCode】" + mainTopic + "相关练习题", "https://leetcode.cn/search/?query=" + encodedTopic, "LeetCode", "practice")
-                ));
+                fallbackResources(mainTopic));
 
         plan.setWeeks(Arrays.asList(week1, week2, week3, week4));
         return plan;
+    }
+
+    private boolean isMeaningfulTopic(String value) {
+        if (value == null || value.isBlank()) return false;
+        String compact = value.replaceAll("\\s+", "");
+        return List.of("待评估", "待确定", "尚未确定", "未确定", "未知", "暂无", "未设置", "综合学习")
+                .stream().noneMatch(compact::contains);
+    }
+
+    /** Mock/故障降级也只返回可直接打开的具体资源，绝不拼接搜索结果页。 */
+    public List<Resource> fallbackResources(String topic) {
+        String normalized = topic.toLowerCase(Locale.ROOT);
+        if (normalized.contains("c++") || normalized.contains("cpp")) {
+            return List.of(
+                    new Resource("LearnCpp：C++ 系统教程", "https://www.learncpp.com/", "LearnCpp", "course"),
+                    new Resource("C++ 语言参考手册", "https://zh.cppreference.com/w/cpp/language", "cppreference", "article"));
+        }
+        if (normalized.equals("c") || normalized.contains("c语言")) {
+            return List.of(
+                    new Resource("C 语言参考手册", "https://zh.cppreference.com/w/c/language", "cppreference", "article"),
+                    new Resource("Beej's Guide to C Programming", "https://beej.us/guide/bgc/", "Beej", "course"));
+        }
+        if (normalized.contains("java ee") || normalized.contains("javaee") || normalized.contains("jakarta")) {
+            return List.of(
+                    new Resource("Jakarta EE 官方教程", "https://jakarta.ee/learn/", "Jakarta EE", "course"),
+                    new Resource("Spring 官方入门指南", "https://spring.io/guides", "Spring", "course"));
+        }
+        if (normalized.contains("java")) {
+            return List.of(
+                    new Resource("【B站】韩顺平 Java 集合专题", "https://www.bilibili.com/video/BV1YA411T76k", "B站", "video"),
+                    new Resource("Dev.java：Java 官方学习路径", "https://dev.java/learn/", "Oracle Java", "course"));
+        }
+        if (normalized.contains("python")) {
+            return List.of(
+                    new Resource("Python 3 官方中文教程", "https://docs.python.org/zh-cn/3/tutorial/", "Python Docs", "course"),
+                    new Resource("MIT 6.0001：Python 编程导论", "https://ocw.mit.edu/courses/6-0001-introduction-to-computer-science-and-programming-in-python-fall-2016/", "MIT OpenCourseWare", "course"));
+        }
+        if (normalized.contains("数据库") || normalized.contains("mysql") || normalized.contains("sql")) {
+            return List.of(
+                    new Resource("MySQL 官方入门教程", "https://dev.mysql.com/doc/refman/8.4/en/tutorial.html", "MySQL", "course"),
+                    new Resource("SQLBolt 交互式 SQL 课程", "https://sqlbolt.com/", "SQLBolt", "practice"));
+        }
+        if (normalized.contains("数据结构") || normalized.contains("算法")) {
+            return List.of(
+                    new Resource("VisuAlgo：数据结构与算法可视化", "https://visualgo.net/zh", "VisuAlgo", "practice"),
+                    new Resource("OI Wiki：算法与数据结构知识库", "https://oi-wiki.org/", "OI Wiki", "article"));
+        }
+        if (normalized.contains("操作系统") || normalized.contains("linux")) {
+            return List.of(
+                    new Resource("OSTEP：Operating Systems: Three Easy Pieces", "https://pages.cs.wisc.edu/~remzi/OSTEP/", "OSTEP", "course"),
+                    new Resource("Linux Journey 系统学习路径", "https://linuxjourney.com/", "Linux Journey", "course"));
+        }
+        if (normalized.contains("网络") || normalized.contains("tcp") || normalized.contains("udp")) {
+            return List.of(
+                    new Resource("Computer Networking 在线讲义与视频", "https://gaia.cs.umass.edu/kurose_ross/online_lectures.htm", "UMass", "course"),
+                    new Resource("Cisco Networking Basics", "https://skillsforall.com/course/networking-basics", "Cisco Skills for All", "course"));
+        }
+        if (normalized.contains("编译")) {
+            return List.of(
+                    new Resource("Crafting Interpreters 在线教材", "https://craftinginterpreters.com/contents.html", "Crafting Interpreters", "course"),
+                    new Resource("LLVM Kaleidoscope 编译器教程", "https://llvm.org/docs/tutorial/", "LLVM", "course"));
+        }
+        if (normalized.contains("离散数学")) {
+            return List.of(
+                    new Resource("Discrete Mathematics: An Open Introduction", "https://discrete.openmathbooks.org/dmoi3.html", "Open Math Books", "course"),
+                    new Resource("MIT Mathematics for Computer Science", "https://courses.csail.mit.edu/6.042/spring18/mcs.pdf", "MIT", "course"));
+        }
+        if (normalized.contains("线性代数") || normalized.contains("矩阵")) {
+            return List.of(
+                    new Resource("MIT 18.06 Linear Algebra", "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/", "MIT OpenCourseWare", "course"),
+                    new Resource("Immersive Linear Algebra", "https://immersivemath.com/ila/index.html", "Immersive Math", "course"));
+        }
+        if (normalized.contains("概率") || normalized.contains("统计")) {
+            return List.of(
+                    new Resource("OpenIntro Statistics 免费教材", "https://www.openintro.org/book/os/", "OpenIntro", "course"),
+                    new Resource("Seeing Theory：概率统计可视化", "https://seeing-theory.brown.edu/", "Brown University", "practice"));
+        }
+        if (normalized.contains("计算机组成")) {
+            return List.of(
+                    new Resource("Nand2Tetris 官方课程", "https://www.nand2tetris.org/course", "Nand2Tetris", "course"),
+                    new Resource("RISC-V Reader 在线资料", "https://riscv.org/technical/specifications/", "RISC-V", "article"));
+        }
+        if (normalized.contains("移动应用") || normalized.contains("android")) {
+            return List.of(
+                    new Resource("Android Basics with Compose", "https://developer.android.com/courses/android-basics-compose/course", "Android Developers", "course"),
+                    new Resource("Android Developers 官方指南", "https://developer.android.com/guide", "Android Developers", "article"));
+        }
+        if (normalized.contains("游戏") || normalized.contains("unity")) {
+            return List.of(
+                    new Resource("Unity Essentials 官方学习路径", "https://learn.unity.com/pathway/unity-essentials", "Unity Learn", "course"),
+                    new Resource("Unity Learn：Junior Programmer", "https://learn.unity.com/pathway/junior-programmer", "Unity Learn", "course"));
+        }
+        return List.of(
+                new Resource("SWEBOK：软件工程知识体系", "https://www.computer.org/education/bodies-of-knowledge/software-engineering", "IEEE Computer Society", "article"),
+                new Resource("Software Engineering at Google 在线书籍", "https://abseil.io/resources/swe-book/html/toc.html", "Google", "course"));
     }
 
     /** 便捷方法：创建一个计划周 */

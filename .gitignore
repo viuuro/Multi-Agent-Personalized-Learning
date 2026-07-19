@@ -62,3 +62,9 @@ Desktop.ini
 # ==================== 本地工具与启动脚本 ====================
 start-frontend.bat
 ffmpeg_bin/
+
+# ==================== 输出文件与项目文档 ====================
+outputs/
+AGENTS.md
+CLAUDE.md
+PROJECT_SPEC.md

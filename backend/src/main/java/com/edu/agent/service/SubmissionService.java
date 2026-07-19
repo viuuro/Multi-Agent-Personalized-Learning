@@ -354,7 +354,7 @@ public class SubmissionService {
             evaluation.setGrowthOutcome(resolveGrowthOutcome(previousScore, score));
             evaluation.setNextChallenge(defaultText(aiResult.get("next_challenge"), suggestion));
             evaluation.setBlessingText(defaultText(aiResult.get("blessing_text"),
-                    "这是你认真走过的又一步。玛丽会记住这份进步，也会陪你继续向前。"));
+                    "这是你认真走过的又一步。我会记住这份进步，也会陪你继续向前。"));
             evaluationRepository.save(evaluation);
 
             try {
@@ -603,7 +603,7 @@ public class SubmissionService {
                 : List.of("与上一版相比，成果结构和实践说明更完整"));
         result.put("behavior_links", List.of("结合了近期学习计划中的目标与任务"));
         result.put("next_challenge", "补充一个可复现的实践过程和结果截图。");
-        result.put("blessing_text", "我看见你认真完成了这一步。别着急，玛丽会陪你把下一次也做好。");
+        result.put("blessing_text", "我看见你认真完成了这一步。别着急，我会陪你把下一次也做好。");
         return result;
     }
 

@@ -141,7 +141,7 @@ onUnmounted(() => {
 .pie-summary small { color: var(--text-faint); font-size: 9px; font-weight: 500; }
 .pie-chart { width: 100%; height: 164px; }
 .pie-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 12px; }
-.pie-legend div { min-width: 0; min-height: 30px; box-sizing: border-box; display: grid; grid-template-columns: 7px 1fr auto; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border-solid); border-radius: 9px; }
+.pie-legend div { min-width: 0; min-height: 30px; box-sizing: border-box; display: grid; grid-template-columns: 7px 1fr auto; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border-solid); border-radius: 9px; background: var(--bg-input); }
 .pie-legend i { width: 7px; height: 7px; border-radius: 50%; }
 .pie-legend span { overflow: hidden; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .pie-legend strong { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }

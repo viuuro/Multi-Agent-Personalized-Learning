@@ -167,7 +167,6 @@ export interface SubmissionDetail {
   versionNumber?: number
   previousSubmissionId?: number
   comparisonSubmissionId?: number
-  agentName?: string
   content: string
   submissionTime: string
   status: 'PENDING' | 'RUNNING' | 'EVALUATED' | 'ERROR'

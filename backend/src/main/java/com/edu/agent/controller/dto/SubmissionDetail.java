@@ -61,7 +61,6 @@ public class SubmissionDetail {
     private Long comparisonSubmissionId;
 
     /** 陪伴用户查看成长反馈的智能体名称。 */
-    private String agentName = "玛丽";
 
     /** 提交的成果内容 */
     private String content;
@@ -149,8 +148,6 @@ public class SubmissionDetail {
     public void setPreviousSubmissionId(Long previousSubmissionId) { this.previousSubmissionId = previousSubmissionId; }
     public Long getComparisonSubmissionId() { return comparisonSubmissionId; }
     public void setComparisonSubmissionId(Long comparisonSubmissionId) { this.comparisonSubmissionId = comparisonSubmissionId; }
-    public String getAgentName() { return agentName; }
-    public void setAgentName(String agentName) { this.agentName = agentName; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }

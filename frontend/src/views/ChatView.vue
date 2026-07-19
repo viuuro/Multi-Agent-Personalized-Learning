@@ -75,7 +75,7 @@
           <div v-if="evaluationResult" class="evaluation-result">
             <div class="eval-header">
               <div>
-                <span class="eval-agent">玛丽的成长档案</span>
+                <span class="eval-agent">成长档案</span>
                 <div class="eval-score-line">
                   <span class="eval-score">{{ evaluationResult.score }} 分</span>
                   <span v-if="evaluationResult.scoreDelta != null" class="eval-delta" :class="{ down: evaluationResult.scoreDelta < 0 }">
@@ -111,7 +111,7 @@
             <div v-if="evaluationResult.blessingText" class="eval-blessing">
               <span>“{{ evaluationResult.blessingText }}”</span>
               <button type="button" :disabled="growthVoiceLoading" @click="playGrowthBlessing">
-                {{ growthVoiceLoading ? '生成语音中…' : '▶ 听玛丽说' }}
+                {{ growthVoiceLoading ? '生成语音中…' : '▶ 播放祝福' }}
               </button>
             </div>
             <p class="eval-suggestion"><b>下一步：</b>{{ evaluationResult.nextChallenge || evaluationResult.suggestion }}</p>
@@ -252,7 +252,7 @@
       :lock-scroll="true"
       modal-class="plan-expand-overlay"
     >
-      <p class="submission-task-tip">选择具体任务后，玛丽才能把这次成果和同一任务的上一版准确比较。</p>
+      <p class="submission-task-tip">选择具体任务后，才能把这次成果和同一任务的上一版准确比较。</p>
       <div class="submission-task-list">
         <button
           v-for="task in submissionTaskOptions"
@@ -492,7 +492,7 @@ function applySubmissionResult(detail?: SubmissionDetail) {
     return
   }
   evaluationResult.value = transientGrowthResult(
-    '玛丽正在整理这次成长档案，结果会自动保存。', '稍后重新打开当前对话即可查看。')
+    '正在整理这次成长档案，结果会自动保存。', '稍后重新打开当前对话即可查看。')
   evaluationResult.value.status = detail.status
 }
 
@@ -992,14 +992,14 @@ async function playGrowthBlessing() {
   }
   growthVoiceLoading.value = true
   try {
-    const style = '角色名叫玛丽，是一名温柔含蓄、长期陪伴用户学习的少女。声音轻柔平缓、连贯自然，带着发自内心的关怀和一点羞怯，咬字清晰，富有细腻感情顿挫，但不要活泼跳跃、夸张撒娇或带宗教仪式腔。'
+    const style = '角色是一名温柔含蓄、长期陪伴用户学习的少女。声音轻柔平缓、连贯自然，带着发自内心的关怀和一点羞怯，咬字清晰，富有细腻感情顿挫，但不要活泼跳跃、夸张撒娇或带宗教仪式腔。'
     const blob = await fetchWelcomeVoice(authStore.user?.username || '', text, style)
     if (!blob.size) return
     growthAudioUrl = URL.createObjectURL(blob)
     growthAudio = new Audio(growthAudioUrl)
     await growthAudio.play()
   } catch (error) {
-    console.warn('玛丽成长祝福语音生成失败:', error)
+    console.warn('成长祝福语音生成失败:', error)
   } finally {
     growthVoiceLoading.value = false
   }

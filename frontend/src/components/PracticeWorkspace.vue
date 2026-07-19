@@ -14,10 +14,6 @@
         <div>
           <h1>把每个小任务变成可完成的题目</h1>
         </div>
-        <div class="autosave-state">
-          <i :class="globalSaveState"></i>
-          {{ globalSaveState === 'saving' ? '正在保存答案' : '答案实时保存' }}
-        </div>
       </header>
 
       <section class="generator-card">
@@ -83,7 +79,6 @@
             <button aria-label="刷新题目" :disabled="loading" @click="loadQuestions"><UiIcon name="refresh" /></button>
           </div>
           <div class="question-filter-bar" aria-label="题型筛选">
-            <span>题型</span>
             <div class="type-chips">
               <button
                 v-for="item in typeFilters"
@@ -165,7 +160,7 @@
                 <span>{{ activeQuestion.correct ? '本题已掌握' : '建议结合解析再练一次' }}</span>
               </div>
               <p><b>参考答案：</b>{{ activeQuestion.correctAnswer }}</p>
-              <p><b>玛丽解析：</b>{{ activeQuestion.explanation || '暂无解析' }}</p>
+              <p><b>题目解析：</b>{{ activeQuestion.explanation || '暂无解析' }}</p>
             </div>
 
             <footer class="answer-footer">
@@ -244,8 +239,6 @@ const selectedTaskTitle = computed(() => selectedWeek.value?.tasks[selectedTaskI
 const filteredQuestions = computed(() => questions.value.filter(question =>
   typeFilter.value === 'ALL' || question.questionType === typeFilter.value))
 const activeQuestion = computed(() => questions.value.find(question => question.id === activeQuestionId.value) || filteredQuestions.value[0])
-const globalSaveState = computed(() => Object.values(saveStates).includes('saving') ? 'saving' : 'saved')
-
 watch(selectedWeekNumber, () => { selectedTaskIndex.value = 0 })
 watch(filteredQuestions, list => {
   if (!list.some(question => question.id === activeQuestionId.value)) activeQuestionId.value = list[0]?.id || null
@@ -416,9 +409,6 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .practice-main { min-width: 0; padding: 38px 28px 22px; overflow: hidden; display: flex; flex-direction: column; }
 .practice-header { min-height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .practice-header h1 { margin: 0; color: var(--text-secondary); font-size: 14px; font-weight: 700; line-height: 32px; }
-.autosave-state { display: flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: 10px; }
-.autosave-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--practice-success); }
-.autosave-state i.saving { background: var(--accent); animation: practice-pulse 1s infinite; }
 .generator-card { display: grid; grid-template-columns: var(--practice-selector-column) minmax(220px, 1.8fr) .8fr .7fr 64px auto; align-items: end; gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .generator-card label { min-width: 0; }
 .generator-card label > span { display: block; margin: 0 0 5px 3px; color: var(--text-faint); font-size: 9px; line-height: 10px; }
@@ -432,22 +422,25 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .generate-question-btn .ui-icon { width: 14px; }
 .generate-question-btn:disabled { opacity: .5; cursor: not-allowed; }
 .practice-error { margin: 8px 3px 0; color: var(--danger); font-size: 11px; }
-.practice-content { min-height: 0; flex: 1; display: grid; grid-template-columns: var(--practice-selector-column) minmax(0, 1fr); gap: 8px; margin-top: 12px; }
-.question-board, .answer-card { min-height: 0; border: 1px solid var(--border-solid); border-radius: 15px; background: var(--ai-bubble-bg); overflow: hidden; }
-.question-board { display: flex; flex-direction: column; }
-.question-board-header { height: 48px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--border-solid); }
+.practice-content { min-height: 0; flex: 1; display: grid; grid-template-columns: var(--practice-selector-column) minmax(0, 1fr); gap: 0; margin-top: 12px; border: 1px solid var(--border-solid); border-radius: 15px; background: var(--ai-bubble-bg); overflow: hidden; }
+.question-board, .answer-card { min-height: 0; border: 0; border-radius: 0; background: transparent; }
+.question-board { position: relative; z-index: 2; display: flex; flex-direction: column; overflow: visible; }
+.question-board-header { height: 48px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
 .question-board-header div { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 14px; font-weight: 700; }
 .question-board-header strong { color: var(--accent); }
 .question-board-header button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border-solid); border-radius: 8px; background: transparent; color: var(--accent); cursor: pointer; }
 .question-board-header .ui-icon { width: 13px; }
-.question-filter-bar { flex: 0 0 auto; padding: 8px 8px 7px; border-bottom: 1px solid var(--border-solid); }
-.question-filter-bar > span { display: block; margin: 0 0 5px 3px; color: var(--text-faint); font-size: 9px; }
-.question-list { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding: 7px; }
-.question-nav-item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+.question-filter-bar { flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--border-solid); }
+.question-list { width: 100%; min-height: 0; flex: 1; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 9px 7px; direction: rtl; }
+.question-nav-item { width: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); direction: ltr; text-align: left; cursor: pointer; }
 .question-nav-item:hover, .question-nav-item.active { background: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.question-nav-item.unanswered.active { border-color: color-mix(in srgb, var(--accent) 30%, transparent); background: transparent; }
+.question-nav-item.active .question-number { background: var(--accent); color: #fff; }
 .question-nav-item.answer-correct { border-color: var(--practice-success); background: var(--practice-success-soft); }
 .question-nav-item.answer-wrong { border-color: var(--practice-danger); background: var(--practice-danger-soft); }
-.question-number { flex: 0 0 24px; color: var(--accent); font-size: 10px; font-variant-numeric: tabular-nums; }
+.question-nav-item.active.answer-correct .question-number { background: var(--practice-success); color: #fff; }
+.question-nav-item.active.answer-wrong .question-number { background: var(--practice-danger); color: #fff; }
+.question-number { width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center; border-radius: 8px; color: var(--accent); font-size: 10px; font-variant-numeric: tabular-nums; }
 .question-nav-copy { min-width: 0; flex: 1; }
 .question-nav-copy b, .question-nav-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .question-nav-copy b { margin-bottom: 3px; font-size: 10px; font-weight: 600; }
@@ -461,12 +454,12 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .question-empty, .answer-empty { flex: 1; display: grid; place-content: center; text-align: center; color: var(--text-faint); }
 .question-empty span { font-size: 12px; }
 .question-empty p, .answer-empty p { margin: 5px 0 0; font-size: 10px; }
-.answer-card { overflow-y: auto; }
+.answer-card { position: relative; z-index: 1; border-left: 1px solid var(--border-solid); border-radius: 15px 0 0 15px; overflow-y: auto; }
 .answer-inner { min-height: 100%; display: flex; flex-direction: column; padding: 22px 26px 18px; }
 .answer-meta { display: flex; align-items: center; justify-content: space-between; }
 .answer-meta > div { display: flex; gap: 5px; }
-.answer-meta span, .answer-meta > strong { padding: 4px 7px; border-radius: 7px; background: var(--bg-input); color: var(--text-faint); font-size: 9px; font-weight: 500; }
-.answer-meta > strong.submitted { color: var(--practice-success); background: var(--practice-success-soft); }
+.answer-meta span, .answer-meta > strong { padding: 4px 7px; border: 1px solid var(--border-solid); border-radius: 7px; background: var(--bg-input); color: var(--text-faint); font-size: 9px; font-weight: 500; }
+.answer-meta > strong.submitted { border-color: var(--practice-success-border); color: var(--practice-success); background: var(--practice-success-soft); }
 .answer-task { margin: 16px 0 5px; color: var(--accent); font-size: 10px; }
 .answer-inner h2 { margin: 0 0 16px; color: var(--text-primary); font-size: 16px; line-height: 1.65; font-weight: 600; }
 .answer-options { display: grid; gap: 8px; }
@@ -488,13 +481,12 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .feedback-score span, .answer-feedback p { color: var(--text-secondary); font-size: 10px; }
 .answer-feedback p { margin: 5px 0; line-height: 1.6; }
 .answer-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 17px; }
-.answer-footer > span { color: var(--text-faint); font-size: 9px; }
+.answer-footer > span { color: var(--text-faint); font-size: 11px; }
 .submit-answer-btn { height: 36px; padding: 0 17px; border: 0; border-radius: 10px; background: var(--accent); color: white; font-size: 11px; cursor: pointer; }
 .submit-answer-btn:disabled { opacity: .45; cursor: not-allowed; }
 .answer-empty { height: 100%; }
 .empty-mark { width: 42px; height: 42px; margin: 0 auto 10px; display: grid; place-items: center; border: 1px solid var(--border-solid); border-radius: 13px; color: var(--accent); font-size: 17px; }
 .answer-empty h2 { margin: 0; color: var(--text-secondary); font-size: 14px; }
-@keyframes practice-pulse { 50% { opacity: .35; } }
 @media (max-width: 980px) {
   .practice-workspace { grid-template-columns: 230px minmax(0,1fr); }
   .generator-card { grid-template-columns: var(--practice-selector-column) minmax(0, 1.4fr) 1fr; }

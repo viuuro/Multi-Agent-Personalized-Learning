@@ -58,7 +58,7 @@ public class VoiceController {
                 .build();
     }
 
-    /** POST /api/voice/welcome - synthesize voice-cloned audio for the current user. */
+    /** POST /api/voice/welcome - synthesize MiMo preset-voice audio for the current user. */
     @PostMapping(value = "/welcome", produces = "audio/wav")
     public ResponseEntity<byte[]> welcome(@RequestBody(required = false) Map<String, String> body,
                                           Authentication authentication) {

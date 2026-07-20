@@ -4,7 +4,7 @@
 提供三个核心能力：
   POST /chat — 画像提取 + 对话生成
   POST /plan — 4 周学习计划生成（含资源推荐）
-  POST /voice/welcome — 非流式语音克隆欢迎语
+  POST /voice/welcome — 冰糖预置音色非流式语音合成
 
 使用 LangChain 框架调用小米 MiMo-v2.5 API（兼容 OpenAI 接口格式）。
 Spring Boot 后端通过 HTTP 调用本服务。
@@ -42,12 +42,14 @@ from langchain_core.messages import SystemMessage, HumanMessage  # 消息类型
 from langchain_core.prompts import ChatPromptTemplate           # 提示词模板
 from starlette.concurrency import run_in_threadpool
 
-from voice_clone_demo import (
+from tts_demo import (
     DEFAULT_STYLE_INSTRUCTION,
-    VoiceCloneError,
+    MODEL_NAME as TTS_MODEL_NAME,
+    PRESET_VOICE,
+    SpeechSynthesisError,
     get_mimo_api_key,
     is_wav_audio,
-    voice_clone_audio,
+    synthesize_speech_audio,
 )
 from intelligence import (
     deterministic_quality_check,
@@ -1736,49 +1738,11 @@ async def parse_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail="文件内容无法解析") from e
 
 
-def resolve_voice_reference_audio() -> Path:
-    """Resolve the configured local reference audio without exposing it over HTTP."""
-    configured_path = os.getenv("MIMO_VOICE_REFERENCE_AUDIO", "").strip()
-    if configured_path:
-        path = Path(configured_path).expanduser()
-        if not path.is_absolute():
-            path = Path(__file__).resolve().parent / path
-        return path
-
-    samples_dir = Path(__file__).resolve().parent / "samples"
-    for preferred_name in ("玛丽.mp3", "mary.mp3", "玛丽.wav", "mary.wav"):
-        preferred_path = samples_dir / preferred_name
-        if preferred_path.is_file():
-            return preferred_path
-
-    candidates = sorted(
-        path
-        for pattern in ("*.mp3", "*.wav")
-        for path in samples_dir.glob(pattern)
-        if path.is_file()
-    )
-    if len(candidates) == 1:
-        return candidates[0]
-    if not candidates:
-        raise VoiceCloneError(
-            "未找到参考音频；请设置 MIMO_VOICE_REFERENCE_AUDIO，"
-            "或在 python-ai/samples 中放置 WAV/MP3 文件。"
-        )
-    raise VoiceCloneError(
-        "samples 中存在多个参考音频；请通过 MIMO_VOICE_REFERENCE_AUDIO 指定一个文件。"
-    )
-
-
-def build_voice_cache_key(reference_audio: Path, text: str, style: str) -> str:
-    try:
-        stat = reference_audio.stat()
-    except OSError as exc:
-        raise VoiceCloneError(f"参考音频不存在或无法读取：{reference_audio}") from exc
+def build_voice_cache_key(text: str, style: str) -> str:
+    """Cache by the complete MiMo TTS request identity."""
     payload = json.dumps({
-        "model": "mimo-v2.5-tts-voiceclone",
-        "reference": str(reference_audio.resolve()),
-        "reference_mtime_ns": stat.st_mtime_ns,
-        "reference_size": stat.st_size,
+        "model": TTS_MODEL_NAME,
+        "voice": PRESET_VOICE,
         "text": text,
         "style": style,
     }, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -1859,7 +1823,7 @@ async def release_voice_cache_lock(
 
 @app.post("/voice/welcome")
 async def welcome_voice(req: WelcomeVoiceRequest):
-    """Generate one WAV welcome message with MiMo's non-streaming voice clone API."""
+    """Generate one WAV message with MiMo's non-streaming BingTang preset voice."""
     username = req.username.strip()
     text = req.text.strip()
     style = req.style.strip() or DEFAULT_STYLE_INSTRUCTION
@@ -1875,8 +1839,7 @@ async def welcome_voice(req: WelcomeVoiceRequest):
         raise HTTPException(status_code=400, detail="style 不能超过 1000 个字符")
 
     try:
-        reference_audio = resolve_voice_reference_audio()
-        cache_key = build_voice_cache_key(reference_audio, text, style)
+        cache_key = build_voice_cache_key(text, style)
         audio_bytes = await run_in_threadpool(read_cached_voice, cache_key)
         cache_status = "HIT" if audio_bytes else "MISS"
         if not audio_bytes:
@@ -1887,21 +1850,20 @@ async def welcome_voice(req: WelcomeVoiceRequest):
                     cache_status = "HIT"
                 else:
                     audio_bytes = await run_in_threadpool(
-                        voice_clone_audio,
-                        reference_audio,
+                        synthesize_speech_audio,
                         text,
                         style,
                     )
                     await run_in_threadpool(write_cached_voice, cache_key, audio_bytes)
             finally:
                 await release_voice_cache_lock(cache_key, lock)
-    except VoiceCloneError as exc:
+    except SpeechSynthesisError as exc:
         logger.warning("欢迎语音生成失败: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     logger.info(
-        "欢迎语音生成完成: reference=%s, text_length=%d, audio_bytes=%d",
-        reference_audio.name,
+        "欢迎语音生成完成: voice=%s, text_length=%d, audio_bytes=%d",
+        PRESET_VOICE,
         len(text),
         len(audio_bytes),
     )

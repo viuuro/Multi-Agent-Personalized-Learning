@@ -57,20 +57,20 @@ py -3.12 -m unittest discover -v
 
 ```powershell
 cd python-ai
-python -m py_compile main.py voice_clone_demo.py
+python -m py_compile main.py tts_demo.py
 ```
 
-该检查用于发现 `/evaluate` 结构化评价提示词和 MiMo 非流式语音克隆客户端的 Python 语法错误。
+该检查用于发现 `/evaluate` 结构化评价提示词和 MiMo 冰糖预置音色非流式 TTS 客户端的 Python 语法错误。
 
 ## 5. 真实 MiMo 在线验收
 
-配置 `MIMO_API_KEY` 和已授权的 `MIMO_VOICE_REFERENCE_AUDIO`，依次启动 Python AI、Spring Boot 和前端，然后：
+配置 `MIMO_API_KEY`，依次启动 Python AI、Spring Boot 和前端，然后：
 
 1. 生成至少包含一个具体任务的学习计划。
 2. 点击“提交学习成果”，确认界面显示 10 MB 上限，并选择任务上传 PDF、DOCX、TXT 或 MD。
 3. 确认成长档案显示综合分、五维分数、掌握点、历史行为联动和首次基线。
 4. 对同一任务上传改进版，确认出现上一版分数、分差和具体进步证据。
-5. 点击“播放祝福”，确认非流式 WAV 祝福可以播放，语气自然轻柔且不会自报姓名。
+5. 点击“播放祝福”，确认“冰糖”预置音色生成的非流式 WAV 祝福可以播放，语气自然轻柔且不会自报姓名。
 6. 发送纯文本问题，确认回复在模型生成期间逐块出现；多模态图片问答目前允许单块返回。
 7. 未提交成果时计划任务应显示空心圆；评价成功后才显示完成勾选。
 8. 配置独立 `IMAGE_GENERATION_API_KEY` 后生成学习图片；移除该 Key 时应得到明确的未配置错误而不是占位图。

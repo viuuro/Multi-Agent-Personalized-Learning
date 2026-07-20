@@ -14,7 +14,7 @@
 | UI 组件 | Element Plus + ECharts |
 | 通信方式 | RESTful API + 原生 SSE Token 流式输出 |
 | 成长档案 | Spring 异步任务 + JPA 版本关系 + MiMo 结构化评价 |
-| 语音陪伴 | MiMo `mimo-v2.5-tts-voiceclone` 非流式语音克隆 + HTMLAudioElement |
+| 语音陪伴 | MiMo `mimo-v2.5-tts` 非流式语音合成 + “冰糖”预置音色 + HTMLAudioElement |
 | 图片资源 | 独立 OpenAI 兼容 Image Generation API，不复用 MiMo 文本密钥 |
 | 测试 | JUnit 5 + MockMvc + Python unittest + Vue TypeScript 生产构建 |
 
@@ -30,7 +30,7 @@
 | 成果文件 | 前后端统一支持 PDF、DOCX、TXT、MD，统一限制单文件最大 10 MB | 提交界面直接展示支持格式，Markdown 文件可解析、评价和入库 |
 | 成长评价稳定性 | 成果评价使用独立 90 秒客户端且不自动重复整次请求；已有异步状态和重启恢复逻辑保持不变 | 较长成果的结构化评价更不容易因通用 30 秒窗口失败 |
 | 图片生成 | 图片资源改为独立 Image Generation API；配置状态暴露在能力与健康检查接口中，未配置时明确返回 503 | 不再用本地 SVG 冒充 AI 图片，也不会错误复用 MiMo 文本接口或密钥 |
-| 语音陪伴 | 语音克隆结果按输入与样本缓存，欢迎语和成长祝福共用合法 WAV 播放链路 | 重复祝福可更快播放，失败时不会把错误响应当音频 |
+| 语音陪伴 | 冰糖预置音色结果按文本与风格缓存，欢迎语和成长祝福共用合法 WAV 播放链路 | 重复祝福可更快播放，失败时不会把错误响应当音频 |
 | 数据库配置 | 后端优先读取 `DB_*`，兼容早期 `MYSQL_*`，取消内置弱密码并使用占位示例 | 本地与部署环境的 MySQL 配置方式更明确 |
 | 回归保障 | 补充真实 SSE、图片生成、评价、语音缓存及计划任务状态测试 | 本次关键故障均有自动化回归覆盖 |
 
@@ -67,7 +67,7 @@
 | 对话标题智能体 | MiMo + 本地降级 | 从整体对话中提取稳定主题，生成历史对话标题 |
 | 成长评价智能体 | MiMo | 对成果进行五维评价，比较版本进步并生成建议、挑战和祝福 |
 
-`llm`、`review_llm`、`question_llm` 和 `question_review_llm` 是由多个角色共享的四个模型客户端，并不代表系统只有四个智能体。语音克隆和文件解析属于工具能力，不计入智能体数量。
+`llm`、`review_llm`、`question_llm` 和 `question_review_llm` 是由多个角色共享的四个模型客户端，并不代表系统只有四个智能体。语音合成和文件解析属于工具能力，不计入智能体数量。
 
 `extract_profile()` 和 `_legacy_generate_practice_questions()` 是为兼容旧调用保留的实现，当前 `/chat` 与 `/questions/generate` 主链路不会调用它们，因此也不计入上述数量。
 
@@ -163,7 +163,7 @@ MiMo 评价请求会同时获得以下上下文：
 │   ├── resource_recommender.py        # 具体视频验证、排序、缓存和官方资源兜底
 │   ├── test_question_pipeline.py     # 出题规则、来源约束和去重测试
 │   ├── test_resource_recommender.py  # 资源解析、直达链接和离线降级测试
-│   ├── voice_clone_demo.py           # MiMo 非流式语音克隆客户端
+│   ├── tts_demo.py                   # MiMo 冰糖预置音色非流式 TTS 客户端
 │   ├── evals/                        # 智能行为离线回归评测
 │   └── requirements.txt              # Python 依赖
 ├── frontend/                         # Vue 3 前端
@@ -214,9 +214,6 @@ export MIMO_API_KEY=sk-your-key-here
 # 可选：默认使用低延迟的规则出题蓝图；设为 true 后由 MiMo 额外生成蓝图
 export QUESTION_LLM_BLUEPRINT_ENABLED=false
 
-# 可选：语音克隆参考音频；相对路径以 python-ai 目录为基准
-export MIMO_VOICE_REFERENCE_AUDIO=samples/your-reference.mp3
-
 # 后端默认连接本机 MySQL；生产环境必须显式提供数据库密码。
 export DB_URL='jdbc:mysql://localhost:3306/edu_agent?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true'
 export DB_USER=root
@@ -251,13 +248,13 @@ py -3.12 -m venv venv
 
 Python AI 服务只供 Spring Boot 进行服务端调用，默认绑定回环地址、不开放浏览器 CORS，并通过 `PYTHON_AI_ALLOWED_HOSTS` 拒绝非本机 Host。不要把 8000 端口直接暴露到公网。
 
-语音克隆使用 MiMo 非流式接口。参考音频仅支持 WAV/MP3，Base64 编码后不得超过
-10 MiB；请只使用已获得声音所有者授权的音频。
+语音合成使用 MiMo 官方 `mimo-v2.5-tts` 非流式接口和中文女性预置音色“冰糖”，
+无需配置或上传参考音频。目标文字放在 `assistant` 消息，语气风格放在可选的 `user` 消息。
 
-也可单独运行语音克隆命令：
+也可单独运行语音合成命令：
 
 ```bash
-python voice_clone_demo.py samples/your-reference.mp3 "你好，这是克隆语音。" -o output_tts.wav
+python tts_demo.py "你好，很高兴继续陪你学习。" -o output_tts.wav
 ```
 
 ### 5. 启动后端
@@ -477,7 +474,7 @@ Spring Boot 调用的知识约束出题接口。执行流程为：
 ### POST /api/voice/welcome
 
 接收 `username`、`text` 和可选 `style`，通过 Python AI 服务调用 MiMo
-`mimo-v2.5-tts-voiceclone` 非流式接口，返回 WAV 音频。欢迎语和成长祝福共用该语音生成能力。
+`mimo-v2.5-tts` 非流式接口并使用“冰糖”预置音色，返回 WAV 音频。欢迎语和成长祝福共用该语音生成能力。
 
 ### POST /api/artifacts/image
 

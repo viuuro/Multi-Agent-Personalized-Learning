@@ -529,7 +529,7 @@ export async function deleteKnowledgeDocumentApi(documentId: number): Promise<vo
   await request<void>(`/knowledge/documents/${documentId}`, { method: 'DELETE' })
 }
 
-/** 使用当前登录用户的克隆音色生成 WAV；signal 用于切换消息时取消过期请求。 */
+/** 使用 MiMo“冰糖”预置音色生成 WAV；signal 用于切换消息时取消过期请求。 */
 export async function fetchVoiceAudio(
   _userId: number,
   username: string,
@@ -552,7 +552,7 @@ export async function fetchVoiceAudio(
   return res.blob()
 }
 
-/** POST /api/voice/welcome —— 生成当前欢迎文字的克隆 WAV 音频。 */
+/** POST /api/voice/welcome —— 使用“冰糖”预置音色生成当前欢迎文字的 WAV。 */
 export function fetchWelcomeVoice(username: string, text: string, style = ''): Promise<Blob> {
   return fetchVoiceAudio(0, username, text, style)
 }

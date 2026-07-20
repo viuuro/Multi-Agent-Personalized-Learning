@@ -10,13 +10,9 @@ VALID_WAV = b"RIFF\x04\x00\x00\x00WAVEdata"
 
 class VoiceCacheTest(unittest.TestCase):
     def test_cache_key_is_stable_and_changes_with_text(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            reference = Path(temp_dir) / "reference.mp3"
-            reference.write_bytes(b"ID3-reference")
-
-            first = main.build_voice_cache_key(reference, "第一句祝福", "轻柔")
-            same = main.build_voice_cache_key(reference, "第一句祝福", "轻柔")
-            changed = main.build_voice_cache_key(reference, "第二句祝福", "轻柔")
+        first = main.build_voice_cache_key("第一句祝福", "轻柔")
+        same = main.build_voice_cache_key("第一句祝福", "轻柔")
+        changed = main.build_voice_cache_key("第二句祝福", "轻柔")
 
         self.assertEqual(first, same)
         self.assertNotEqual(first, changed)

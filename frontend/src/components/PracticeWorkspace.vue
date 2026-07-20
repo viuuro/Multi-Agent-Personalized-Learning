@@ -22,10 +22,31 @@
       </div>
 
       <PracticeStatsPie v-if="workspaceMode === 'practice'" :questions="questions" />
-      <div v-else class="overview-side-copy">
-        <span>课程知识地图</span>
-        <strong>2 门课程 · 16 个核心章节</strong>
-        <p>掌握度由计划覆盖、练习提交与正确率共同计算，随着学习证据实时更新。</p>
+      <div v-else class="overview-course-scroll">
+        <div class="overview-course-inner">
+          <div class="overview-course-heading">
+            <span>课程进度</span>
+            <small>选择课程查看章节掌握情况</small>
+          </div>
+          <div class="overview-course-list">
+            <button
+              v-for="course in overviewCourseProgress"
+              :key="course.key"
+              class="overview-course-card"
+              :class="{ active: selectedOverviewCourseKey === course.key }"
+              type="button"
+              @click="selectedOverviewCourseKey = course.key"
+            >
+              <span class="overview-course-index">{{ course.short }}</span>
+              <span class="overview-course-copy">
+                <b>{{ course.name }}</b>
+                <small>{{ course.chapters.length }} 章 · {{ course.evidenceCount }} 条练习证据</small>
+                <i><em :style="{ width: `${course.mastery}%` }"></em></i>
+              </span>
+              <strong>{{ course.mastery }}%</strong>
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
 
@@ -210,6 +231,8 @@
       :plan="plan"
       :questions="questions"
       :conversation-id="chatStore.conversationId"
+      :course-progress="overviewCourseProgress"
+      :selected-course-key="selectedOverviewCourseKey"
     />
   </section>
 </template>
@@ -236,10 +259,12 @@ import type {
 import UiIcon from './UiIcon.vue'
 import PracticeStatsPie from './PracticeStatsPie.vue'
 import LearningOverview from './LearningOverview.vue'
+import { buildCourseProgress, COURSE_CATALOG } from '../services/learningOverview'
 
 const chatStore = useChatStore()
 const profileStore = useProfileStore()
 const workspaceMode = ref<'practice' | 'overview'>('practice')
+const selectedOverviewCourseKey = ref(COURSE_CATALOG[0].key)
 const plan = ref<LearningPlan | null>(null)
 const questions = ref<PracticeQuestion[]>([])
 const activeQuestionId = ref<number | null>(null)
@@ -270,6 +295,7 @@ const selectedTaskTitle = computed(() => selectedWeek.value?.tasks[selectedTaskI
 const filteredQuestions = computed(() => questions.value.filter(question =>
   typeFilter.value === 'ALL' || question.questionType === typeFilter.value))
 const activeQuestion = computed(() => questions.value.find(question => question.id === activeQuestionId.value) || filteredQuestions.value[0])
+const overviewCourseProgress = computed(() => buildCourseProgress(plan.value, questions.value))
 watch(selectedWeekNumber, () => { selectedTaskIndex.value = 0 })
 watch(filteredQuestions, list => {
   if (!list.some(question => question.id === activeQuestionId.value)) activeQuestionId.value = list[0]?.id || null
@@ -445,11 +471,33 @@ onUnmounted(() => saveTimers.forEach(timer => clearTimeout(timer)))
 .workspace-mode-switch span.active { color: #fff; }
 .workspace-mode-switch i { position: absolute; z-index: 0; top: 2px; left: 2px; width: calc(50% - 2px); height: calc(100% - 4px); border-radius: 6px; background: var(--accent); box-shadow: none; transition: transform .22s ease; }
 .workspace-mode-switch.overview i { transform: translateX(100%); }
-.overview-side-copy { margin-top: 42px; padding: 18px 15px; border: 1px solid var(--border-solid); border-radius: 14px; background: var(--ai-bubble-bg); }
-.overview-side-copy span, .overview-side-copy strong { display: block; }
-.overview-side-copy span { margin-bottom: 7px; color: var(--accent); font-size: 10px; }
-.overview-side-copy strong { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
-.overview-side-copy p { margin: 11px 0 0; color: var(--text-faint); font-size: 10px; line-height: 1.7; }
+.overview-course-scroll {
+  position: absolute;
+  top: 124px;
+  right: 18px;
+  bottom: 410px;
+  left: 6px;
+  min-height: 116px;
+  overflow-y: auto;
+  direction: rtl;
+  scrollbar-gutter: stable;
+}
+.overview-course-inner { min-width: 0; padding: 0 0 4px 12px; direction: ltr; }
+.overview-course-heading { margin: 0 2px 10px; }
+.overview-course-heading span, .overview-course-heading small { display: block; }
+.overview-course-heading span { color: var(--text-secondary); font-size: 14px; font-weight: 700; }
+.overview-course-heading small { margin-top: 3px; color: var(--text-faint); font-size: 10px; }
+.overview-course-list { display: flex; flex-direction: column; gap: 10px; }
+.overview-course-card { width: 100%; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border-solid); border-radius: 14px; background: var(--ai-bubble-bg); color: var(--text-secondary); text-align: left; cursor: pointer; transition: border-color .2s, transform .2s; }
+.overview-course-card:hover, .overview-course-card.active { border-color: color-mix(in srgb, var(--accent) 58%, var(--border-solid)); transform: translateY(-1px); }
+.overview-course-index { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; background: var(--accent-hover); color: var(--accent); font-size: 11px; font-weight: 800; }
+.overview-course-copy { min-width: 0; flex: 1; }
+.overview-course-copy b, .overview-course-copy small, .overview-course-copy i { display: block; }
+.overview-course-copy b { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.overview-course-copy small { overflow: hidden; margin: 3px 0 8px; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.overview-course-copy i { height: 4px; overflow: hidden; border-radius: 999px; background: var(--border-solid); }
+.overview-course-copy em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); }
+.overview-course-card > strong { flex: 0 0 auto; color: var(--accent); font-size: 15px; }
 .type-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .type-chips button { width: 100%; height: 27px; padding: 0 2px; border: 1px solid var(--border-solid); border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 9px; cursor: pointer; }
 .type-chips button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-hover); }

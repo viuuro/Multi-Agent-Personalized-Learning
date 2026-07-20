@@ -110,6 +110,9 @@ export async function sendMessage(
     }
   } finally {
     if (inactivityTimer) clearTimeout(inactivityTimer)
+    if (metadata?.attachmentType === 'image') {
+      window.dispatchEvent(new Event('file-history-updated'))
+    }
   }
 }
 

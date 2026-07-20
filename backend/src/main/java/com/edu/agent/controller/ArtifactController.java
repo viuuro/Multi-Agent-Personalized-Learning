@@ -2,6 +2,7 @@ package com.edu.agent.controller;
 
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.security.CurrentUser;
+import com.edu.agent.service.ArtifactPersistenceService;
 import com.edu.agent.service.KnowledgeBaseService;
 import com.edu.agent.service.RequestRateLimiter;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -28,6 +29,7 @@ public class ArtifactController {
     private final ObjectMapper objectMapper;
     private final KnowledgeBaseService knowledgeBaseService;
     private final RequestRateLimiter rateLimiter;
+    private final ArtifactPersistenceService artifactPersistenceService;
     private final String pythonAiUrl;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(8)).build();
@@ -35,10 +37,12 @@ public class ArtifactController {
     public ArtifactController(ObjectMapper objectMapper,
                               KnowledgeBaseService knowledgeBaseService,
                               RequestRateLimiter rateLimiter,
+                              ArtifactPersistenceService artifactPersistenceService,
                               @Value("${python.ai.url:http://localhost:8000}") String pythonAiUrl) {
         this.objectMapper = objectMapper;
         this.knowledgeBaseService = knowledgeBaseService;
         this.rateLimiter = rateLimiter;
+        this.artifactPersistenceService = artifactPersistenceService;
         this.pythonAiUrl = pythonAiUrl;
     }
 
@@ -52,12 +56,20 @@ public class ArtifactController {
         if (response.statusCode() != 200) {
             throw new ResponseStatusException(BAD_GATEWAY, "图片生成服务暂时不可用");
         }
+        Map<String, Object> result;
         try {
-            Map<String, Object> result = objectMapper.readValue(
-                    response.body(), new TypeReference<Map<String, Object>>() {});
-            return ApiResponse.success("图片资源已生成", result);
+            result = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
         } catch (Exception exception) {
             throw new ResponseStatusException(BAD_GATEWAY, "图片生成结果无法解析", exception);
+        }
+        try {
+            artifactPersistenceService.persistGeneratedImage(
+                    userId, text(body.get("conversationId"), 64), prompt, result);
+            return ApiResponse.success("图片资源已生成", result);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(BAD_GATEWAY, exception.getMessage(), exception);
+        } catch (Exception exception) {
+            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "图片已生成，但持久化失败", exception);
         }
     }
 

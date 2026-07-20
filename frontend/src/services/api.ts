@@ -176,6 +176,7 @@ export interface UploadedFileRecord {
   fileName: string
   sizeBytes: number
   purpose: 'CHAT' | 'SUBMISSION' | 'KNOWLEDGE'
+  fileKind?: 'DOCUMENT' | 'IMAGE'
   uploadedAt: string
 }
 
@@ -458,6 +459,8 @@ export async function deleteResourceCollectionApi(collectionId: number): Promise
 
 export interface GeneratedImageArtifact {
   dataUrl: string
+  conversationId: string
+  messageId?: number
 }
 
 export async function generateImageArtifactApi(prompt: string, conversationId?: string): Promise<GeneratedImageArtifact> {

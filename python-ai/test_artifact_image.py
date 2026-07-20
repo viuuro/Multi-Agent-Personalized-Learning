@@ -55,6 +55,25 @@ class ArtifactImageTest(unittest.TestCase):
 
         self.assertEqual(502, context.exception.status_code)
 
+    def test_remote_image_is_converted_to_persistent_data_url(self):
+        provider_response = Mock()
+        provider_response.raise_for_status.return_value = None
+        provider_response.json.return_value = {"data": [{"url": "https://cdn.example/image.png"}]}
+        image_response = Mock()
+        image_response.raise_for_status.return_value = None
+        image_response.headers = {"Content-Type": "image/png"}
+        image_response.iter_content.return_value = [b"persistent-image"]
+
+        with (
+            patch.object(main, "IMAGE_GENERATION_API_KEY", "image-key"),
+            patch.object(main.http_requests, "post", return_value=provider_response),
+            patch.object(main.http_requests, "get", return_value=image_response) as get,
+        ):
+            result = main._generate_image(main.ArtifactRequest(prompt="知识图"))
+
+        self.assertTrue(result["dataUrl"].startswith("data:image/png;base64,"))
+        get.assert_called_once_with("https://cdn.example/image.png", timeout=30, stream=True)
+
 
 if __name__ == "__main__":
     unittest.main()

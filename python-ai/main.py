@@ -1960,8 +1960,37 @@ def _generate_image(req: ArtifactRequest) -> dict:
         if isinstance(encoded_image, str) and encoded_image.strip():
             return {"dataUrl": "data:image/png;base64," + encoded_image.strip()}
         if isinstance(remote_url, str) and remote_url.startswith("https://"):
-            return {"dataUrl": remote_url}
+            return {"dataUrl": _download_image_data_url(remote_url)}
     raise HTTPException(status_code=502, detail="图片生成 API 没有返回可用图片")
+
+
+def _download_image_data_url(remote_url: str) -> str:
+    """立即固化供应商临时 URL，避免图片地址过期后历史消息失效。"""
+    # MEDIUMTEXT 上限约 16MB；Base64 会膨胀约 1/3，因此原图控制在 11MB 内。
+    max_bytes = 11 * 1024 * 1024
+    try:
+        response = http_requests.get(remote_url, timeout=30, stream=True)
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise HTTPException(status_code=502, detail="图片供应商返回了不支持的图片格式")
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=502, detail="生成图片过大，无法持久化")
+            chunks.append(chunk)
+        if not chunks:
+            raise HTTPException(status_code=502, detail="图片供应商返回了空图片")
+        encoded = base64.b64encode(b"".join(chunks)).decode("ascii")
+        return f"data:{content_type};base64,{encoded}"
+    except HTTPException:
+        raise
+    except http_requests.RequestException as exception:
+        raise HTTPException(status_code=502, detail="生成图片下载失败，无法持久化") from exception
 
 
 @app.get("/artifacts/capabilities")

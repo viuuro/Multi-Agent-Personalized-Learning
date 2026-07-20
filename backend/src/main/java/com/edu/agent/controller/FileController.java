@@ -2,6 +2,8 @@ package com.edu.agent.controller;
 
 import com.edu.agent.model.ApiResponse;
 import com.edu.agent.model.UploadedFileRecord;
+import com.edu.agent.model.Conversation;
+import com.edu.agent.repository.ConversationRepository;
 import com.edu.agent.repository.UploadedFileRecordRepository;
 import com.edu.agent.security.CurrentUser;
 import com.edu.agent.service.KnowledgeBaseService;
@@ -24,6 +26,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Map;
 
 /**
@@ -41,6 +45,7 @@ public class FileController {
     private String pythonAiUrl;
 
     private final UploadedFileRecordRepository uploadedFileRepository;
+    private final ConversationRepository conversationRepository;
     private final RequestRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
     private final KnowledgeBaseService knowledgeBaseService;
@@ -50,10 +55,12 @@ public class FileController {
             .build();
 
     public FileController(UploadedFileRecordRepository uploadedFileRepository,
+                          ConversationRepository conversationRepository,
                           RequestRateLimiter rateLimiter,
                           ObjectMapper objectMapper,
                           KnowledgeBaseService knowledgeBaseService) {
         this.uploadedFileRepository = uploadedFileRepository;
+        this.conversationRepository = conversationRepository;
         this.rateLimiter = rateLimiter;
         this.objectMapper = objectMapper;
         this.knowledgeBaseService = knowledgeBaseService;
@@ -174,8 +181,48 @@ public class FileController {
             @RequestParam(defaultValue = "50") int limit) {
         userId = CurrentUser.id(authentication);
         int safeLimit = Math.max(1, Math.min(limit, 200));
-        return ApiResponse.success("ok", uploadedFileRepository
+        List<UploadedFileRecord> history = new ArrayList<>(uploadedFileRepository
                 .findByUserIdOrderByUploadedAtDesc(userId, PageRequest.of(0, safeLimit)));
+        history.forEach(item -> item.setFileKind("DOCUMENT"));
+        conversationRepository.findByUserIdAndRoleAndAttachmentTypeOrderByTimestampDesc(
+                        userId, "user", "image", PageRequest.of(0, safeLimit))
+                .stream()
+                .map(this::toImageHistoryItem)
+                .forEach(history::add);
+        history.sort(Comparator.comparing(UploadedFileRecord::getUploadedAt).reversed());
+        return ApiResponse.success("ok", history.stream().limit(safeLimit).toList());
+    }
+
+    private UploadedFileRecord toImageHistoryItem(Conversation message) {
+        UploadedFileRecord item = new UploadedFileRecord();
+        // 文件记录主键均为正数；负值为图片消息在历史列表中的稳定虚拟 ID。
+        item.setId(message.getId() == null ? Long.MIN_VALUE : -message.getId());
+        item.setUserId(message.getUserId());
+        item.setConversationId(message.getConversationId());
+        item.setFileName(imageName(message));
+        item.setSizeBytes(estimateDataUrlBytes(message.getAttachmentData()));
+        item.setPurpose("CHAT");
+        item.setFileKind("IMAGE");
+        item.setUploadedAt(message.getTimestamp());
+        return item;
+    }
+
+    private String imageName(Conversation message) {
+        if (message.getAttachmentName() != null && !message.getAttachmentName().isBlank()) {
+            return message.getAttachmentName();
+        }
+        String data = message.getAttachmentData() == null ? "" : message.getAttachmentData();
+        String extension = data.startsWith("data:image/jpeg") ? "jpg"
+                : data.startsWith("data:image/webp") ? "webp" : "png";
+        return "上传图片." + extension;
+    }
+
+    private long estimateDataUrlBytes(String dataUrl) {
+        if (dataUrl == null || dataUrl.isBlank()) return 0L;
+        int comma = dataUrl.indexOf(',');
+        String encoded = comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl;
+        int padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0;
+        return Math.max(0L, encoded.length() * 3L / 4L - padding);
     }
 
     private byte[] concat(byte[] a, byte[] b, byte[] c) {

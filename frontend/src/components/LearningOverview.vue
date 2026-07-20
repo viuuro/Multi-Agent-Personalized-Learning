@@ -2,7 +2,6 @@
   <main class="learning-overview">
     <header class="overview-header">
       <div>
-        <span class="eyebrow">LEARNING OVERVIEW</span>
         <h1>把学习证据沉淀成清晰的课程进度</h1>
         <p>章节掌握度基于当前计划、已生成题目、提交率与正确率综合计算。</p>
       </div>
@@ -14,29 +13,6 @@
     </header>
 
     <p v-if="errorMessage" class="overview-error">{{ errorMessage }}</p>
-
-    <section class="course-section">
-      <div class="section-heading">
-        <div><span>课程进度</span><small>选择课程查看章节掌握情况</small></div>
-      </div>
-      <div class="course-grid">
-        <button
-          v-for="course in courseProgress"
-          :key="course.key"
-          class="course-card"
-          :class="{ active: selectedCourseKey === course.key }"
-          @click="selectedCourseKey = course.key"
-        >
-          <span class="course-index">{{ course.short }}</span>
-          <span class="course-copy">
-            <b>{{ course.name }}</b>
-            <small>{{ course.chapters.length }} 章 · {{ course.evidenceCount }} 条练习证据</small>
-            <i><em :style="{ width: `${course.mastery}%` }"></em></i>
-          </span>
-          <strong>{{ course.mastery }}%</strong>
-        </button>
-      </div>
-    </section>
 
     <section class="chapter-section">
       <div class="section-heading">
@@ -159,62 +135,17 @@ import type {
   ResourceCollection,
   ResourceItem,
 } from '../services/api'
+import type { CourseProgress } from '../services/learningOverview'
 
 const props = defineProps<{
   plan: LearningPlan | null
   questions: PracticeQuestion[]
   conversationId: string
+  courseProgress: CourseProgress[]
+  selectedCourseKey: string
 }>()
 
-type CourseDefinition = {
-  key: string
-  name: string
-  short: string
-  aliases: string[]
-  chapters: Array<{ key: string; name: string; summary: string; keywords: string[] }>
-}
-
-const COURSE_CATALOG: CourseDefinition[] = [
-  {
-    key: 'data-structures', name: '数据结构', short: 'DS', aliases: ['数据结构', '算法'],
-    chapters: [
-      { key: 'intro-complexity', name: '绪论与复杂度分析', summary: '抽象数据类型、渐进复杂度与分析方法', keywords: ['绪论', '复杂度', '大o', '渐进', '抽象数据类型'] },
-      { key: 'linear-list', name: '线性表', summary: '顺序表、链表与复杂度分析', keywords: ['线性表', '顺序表', '链表'] },
-      { key: 'stack-queue-array', name: '栈、队列与数组', summary: '受限线性结构、多维数组及其应用', keywords: ['栈', '队列', '数组', '矩阵'] },
-      { key: 'string', name: '串', summary: '字符串存储与模式匹配', keywords: ['串', '字符串', '模式匹配', 'kmp'] },
-      { key: 'tree', name: '树与二叉树', summary: '遍历、哈夫曼树与结构转换', keywords: ['树', '二叉树', '遍历', '哈夫曼'] },
-      { key: 'balanced-tree', name: 'BST 与平衡树', summary: '二叉搜索树、AVL 与红黑树', keywords: ['bst', '二叉搜索树', '平衡树', 'avl', '红黑树'] },
-      { key: 'heap', name: '堆与优先队列', summary: '堆化、优先队列与 Top-K', keywords: ['堆', '优先队列', 'top-k', 'topk'] },
-      { key: 'hash', name: '散列表', summary: '哈希函数、冲突处理与装载因子', keywords: ['散列表', '哈希', '散列', '装载因子'] },
-      { key: 'graph', name: '图', summary: '遍历、最短路与拓扑结构', keywords: ['图', '最短路径', '拓扑', '生成树'] },
-      { key: 'sort', name: '排序', summary: '内部排序与外部排序', keywords: ['排序', '快排', '归并', '基数'] },
-      { key: 'search-index', name: '查找与索引', summary: '查找策略、B 树与 B+ 树索引', keywords: ['查找', '搜索', '索引', 'b树', 'b+树'] },
-      { key: 'recursion-design', name: '递归与算法设计', summary: '递归、分治、贪心与动态规划', keywords: ['递归', '分治', '贪心', '动态规划'] },
-      { key: 'np-completeness', name: 'NP-完全性', summary: '归约、P/NP 与可计算性边界', keywords: ['np', '归约', 'p问题', '完全性'] },
-      { key: 'advanced-topic', name: '进阶专题', summary: '并查集、Trie 与高级结构', keywords: ['并查集', 'trie', '高级数据结构', '进阶专题'] },
-    ],
-  },
-  {
-    key: 'computer-organization', name: '计算机组成原理', short: 'CO', aliases: ['计算机组成', '组成原理', '体系结构'],
-    chapters: [
-      { key: 'system-overview', name: '计算机系统概论', summary: '层次结构、性能指标与系统组成', keywords: ['系统概论', '层次结构', '性能指标', '冯诺依曼'] },
-      { key: 'data-representation', name: '数据表示与编码', summary: '数制、定点数与浮点数', keywords: ['数据表示', '编码', '补码', '浮点', '数制'] },
-      { key: 'memory', name: '存储系统', summary: 'Cache、主存与虚拟存储', keywords: ['存储', 'cache', '缓存', '虚拟内存', '主存'] },
-      { key: 'instruction', name: '指令系统', summary: '寻址方式与指令格式', keywords: ['指令', '寻址', 'isa'] },
-      { key: 'cpu', name: '中央处理器', summary: '数据通路、控制器、时序与流水线', keywords: ['cpu', '处理器', '数据通路', '流水线', '控制器', '微程序'] },
-      { key: 'bus', name: '总线', summary: '总线仲裁、定时与传输协议', keywords: ['总线', '仲裁', '总线周期', '同步总线'] },
-      { key: 'io', name: '输入输出系统', summary: '中断、DMA 与外设接口', keywords: ['输入输出', 'i/o', 'io', '中断', 'dma', '外设'] },
-      { key: 'digital-logic', name: '数字逻辑基础', summary: '组合逻辑、时序逻辑与存储元件', keywords: ['数字逻辑', '组合逻辑', '时序逻辑', '触发器'] },
-      { key: 'parallel', name: '并行处理', summary: '多核、并行层次与加速比', keywords: ['并行', '多核', 'simd', '加速比'] },
-      { key: 'secondary-storage', name: '辅助存储与 I/O 设备', summary: '磁盘、RAID 与常用外设', keywords: ['辅助存储', '磁盘', 'raid', 'i/o设备'] },
-      { key: 'isa-comparison', name: '指令集对比', summary: '不同指令集设计取舍与比较', keywords: ['指令集对比', 'risc', 'cisc', 'isa对比'] },
-      { key: 'review-resources', name: '综合复盘与资源', summary: '课程公式、工具与复习路径', keywords: ['附录', '资源速查', '综合复盘', '公式速查'] },
-    ],
-  },
-]
-
 const collections = ref<ResourceCollection[]>([])
-const selectedCourseKey = ref(COURSE_CATALOG[0].key)
 const activeCollectionId = ref<'all' | number>('all')
 const newCollectionName = ref('')
 const creatingCollection = ref(false)
@@ -228,41 +159,15 @@ const visibleFavorites = computed(() => activeCollectionId.value === 'all'
   ? allFavorites.value
   : collections.value.find(collection => collection.id === activeCollectionId.value)?.resources || [])
 
-function searchableQuestion(question: PracticeQuestion) {
-  return `${question.weekTopic} ${question.taskTitle} ${question.knowledgePoint || ''} ${question.learningObjective || ''}`.toLowerCase()
-}
-
 function matchesAny(text: string, keywords: string[]) {
   const normalized = text.toLowerCase()
   return keywords.some(keyword => normalized.includes(keyword.toLowerCase()))
 }
 
-function chapterEvidence(chapter: CourseDefinition['chapters'][number]) {
-  const planned = props.plan?.weeks.some(week => matchesAny(`${week.topic} ${week.tasks.join(' ')}`, chapter.keywords)) || false
-  const questions = props.questions.filter(question => {
-    const text = searchableQuestion(question)
-    return matchesAny(text, chapter.keywords)
-  })
-  const submitted = questions.filter(question => question.status === 'SUBMITTED')
-  const correct = submitted.filter(question => question.correct).length
-  let mastery = planned ? 10 : 0
-  if (questions.length) {
-    const submissionRate = submitted.length / questions.length
-    const accuracy = submitted.length ? correct / submitted.length : 0
-    mastery = Math.round(submissionRate * 20 + accuracy * 65 + Math.min(questions.length / 5, 1) * 15)
-    if (planned) mastery = Math.max(10, mastery)
-  }
-  return { ...chapter, generated: questions.length, submitted: submitted.length, correct, mastery }
-}
-
-const courseProgress = computed(() => COURSE_CATALOG.map(course => {
-  const chapters = course.chapters.map(chapter => chapterEvidence(chapter))
-  const mastery = Math.round(chapters.reduce((sum, chapter) => sum + chapter.mastery, 0) / chapters.length)
-  const evidenceCount = chapters.reduce((sum, chapter) => sum + chapter.generated, 0)
-  return { ...course, chapters, mastery, evidenceCount }
-}))
-const selectedCourse = computed(() => courseProgress.value.find(course => course.key === selectedCourseKey.value) || courseProgress.value[0])
-const overallMastery = computed(() => Math.round(courseProgress.value.reduce((sum, course) => sum + course.mastery, 0) / courseProgress.value.length))
+const selectedCourse = computed(() => props.courseProgress.find(
+  course => course.key === props.selectedCourseKey) || props.courseProgress[0]!)
+const overallMastery = computed(() => Math.round(props.courseProgress.reduce(
+  (sum, course) => sum + course.mastery, 0) / Math.max(props.courseProgress.length, 1)))
 
 const recommendedResources = computed(() => {
   const seen = new Set<string>()
@@ -286,10 +191,10 @@ const groupedRecommendedResources = computed(() => {
 
 function inferCourse(resource: ResourceItem & { weekTopic?: string }) {
   const text = `${resource.title} ${resource.platform} ${resource.weekTopic || ''}`
-  return COURSE_CATALOG.find(course => matchesAny(text, course.aliases)) || selectedCourse.value
+  return props.courseProgress.find(course => matchesAny(text, course.aliases)) || selectedCourse.value
 }
 
-function inferChapter(course: CourseDefinition, resource: ResourceItem & { weekTopic?: string }) {
+function inferChapter(course: CourseProgress, resource: ResourceItem & { weekTopic?: string }) {
   const text = `${resource.title} ${resource.weekTopic || ''}`
   return course.chapters.find(chapter => matchesAny(text, chapter.keywords))
 }
@@ -379,42 +284,32 @@ onMounted(loadCollections)
 
 <style scoped>
 .learning-overview { min-width: 0; height: 100%; padding: 38px 28px 48px; overflow-y: auto; color: var(--text-primary); }
-.overview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 24px; }
-.eyebrow { color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .16em; }
-.overview-header h1 { margin: 6px 0 5px; color: var(--text-primary); font-size: 21px; line-height: 1.4; }
-.overview-header p { margin: 0; color: var(--text-faint); font-size: 11px; }
+.overview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 20px; }
+.overview-header h1 { margin: 0 0 5px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.overview-header p { margin: 0; color: var(--text-faint); font-size: 12px; }
 .overview-metrics { display: grid; grid-template-columns: repeat(3, minmax(92px, 1fr)); gap: 8px; }
 .overview-metrics div { min-width: 92px; padding: 11px 13px; border: 1px solid var(--border-solid); border-radius: 12px; background: var(--ai-bubble-bg); }
 .overview-metrics strong, .overview-metrics span { display: block; }
-.overview-metrics strong { color: var(--accent); font-size: 18px; }
-.overview-metrics span { margin-top: 2px; color: var(--text-faint); font-size: 9px; }
-.overview-error { margin: -10px 0 16px; padding: 9px 12px; border: 1px solid var(--practice-danger-border); border-radius: 10px; background: var(--practice-danger-soft); color: var(--practice-danger); font-size: 11px; }
-.course-section, .chapter-section, .resource-section, .collection-section { margin-top: 24px; }
+.overview-metrics strong { color: var(--accent); font-size: 19px; }
+.overview-metrics span { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
+.overview-error { margin: -10px 0 16px; padding: 9px 12px; border: 1px solid var(--practice-danger-border); border-radius: 10px; background: var(--practice-danger-soft); color: var(--practice-danger); font-size: 12px; }
+.chapter-section, .resource-section, .collection-section { margin-top: 24px; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
 .section-heading > div > span, .section-heading > div > small { display: block; }
-.section-heading > div > span { color: var(--text-secondary); font-size: 13px; font-weight: 700; }
-.section-heading > div > small, .evidence-note { margin-top: 3px; color: var(--text-faint); font-size: 9px; font-weight: 400; }
-.course-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.course-card { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--border-solid); border-radius: 14px; background: var(--ai-bubble-bg); color: var(--text-secondary); text-align: left; cursor: pointer; transition: border-color .2s, transform .2s; }
-.course-card:hover, .course-card.active { border-color: color-mix(in srgb, var(--accent) 58%, var(--border-solid)); transform: translateY(-1px); }
-.course-index { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; border-radius: 11px; background: var(--accent-hover); color: var(--accent); font-size: 11px; font-weight: 800; }
-.course-copy { min-width: 0; flex: 1; }
-.course-copy b, .course-copy small, .course-copy i { display: block; }
-.course-copy b { font-size: 13px; }
-.course-copy small { margin: 3px 0 8px; color: var(--text-faint); font-size: 9px; }
-.course-copy i, .chapter-copy > i { height: 4px; overflow: hidden; border-radius: 999px; background: var(--border-solid); }
-.course-copy em, .chapter-copy em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); }
-.course-card > strong { color: var(--accent); font-size: 15px; }
+.section-heading > div > span { color: var(--text-secondary); font-size: 14px; font-weight: 700; }
+.section-heading > div > small, .evidence-note { margin-top: 3px; color: var(--text-faint); font-size: 10px; font-weight: 400; }
+.chapter-copy > i { height: 4px; overflow: hidden; border-radius: 999px; background: var(--border-solid); }
+.chapter-copy em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-dark)); }
 .chapter-list { overflow: hidden; border: 1px solid var(--border-solid); border-radius: 14px; background: var(--ai-bubble-bg); }
 .chapter-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 92px 45px; align-items: center; gap: 12px; min-height: 61px; padding: 9px 14px; border-bottom: 1px solid var(--border-solid); }
 .chapter-row:last-child { border-bottom: 0; }
-.chapter-number { color: var(--text-faint); font-size: 9px; font-variant-numeric: tabular-nums; }
+.chapter-number { color: var(--text-faint); font-size: 10px; font-variant-numeric: tabular-nums; }
 .chapter-copy > div { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-.chapter-copy b { color: var(--text-secondary); font-size: 11px; }
-.chapter-copy small { overflow: hidden; color: var(--text-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.chapter-evidence span, .chapter-evidence small { display: block; color: var(--text-faint); font-size: 9px; }
+.chapter-copy b { color: var(--text-secondary); font-size: 12px; }
+.chapter-copy small { overflow: hidden; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chapter-evidence span, .chapter-evidence small { display: block; color: var(--text-faint); font-size: 10px; }
 .chapter-evidence small { margin-top: 3px; }
-.chapter-row > strong { font-size: 12px; text-align: right; }
+.chapter-row > strong { font-size: 13px; text-align: right; }
 .chapter-row > strong.strong { color: var(--practice-success); }
 .chapter-row > strong.medium { color: var(--accent); }
 .chapter-row > strong.weak { color: var(--text-faint); }
@@ -423,17 +318,17 @@ onMounted(loadCollections)
 .resource-group { overflow: hidden; border: 1px solid var(--border-solid); border-radius: 13px; background: color-mix(in srgb, var(--ai-bubble-bg) 72%, transparent); }
 .resource-group > summary { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 13px; color: var(--text-secondary); cursor: pointer; list-style: none; }
 .resource-group > summary::-webkit-details-marker { display: none; }
-.resource-group > summary span { font-size: 11px; font-weight: 700; }
-.resource-group > summary small { flex: 1; color: var(--text-faint); font-size: 9px; }
+.resource-group > summary span { font-size: 12px; font-weight: 700; }
+.resource-group > summary small { flex: 1; color: var(--text-faint); font-size: 10px; }
 .resource-group > summary i { color: var(--accent); font-size: 13px; font-style: normal; transition: transform .2s; }
 .resource-group[open] > summary i { transform: rotate(180deg); }
 .resource-group .recommendation-grid { padding: 0 9px 9px; }
 .recommendation-card { min-width: 0; padding: 13px; border: 1px solid var(--border-solid); border-radius: 13px; background: var(--ai-bubble-bg); }
-.resource-type { display: inline-flex; padding: 3px 6px; border-radius: 6px; background: var(--accent-hover); color: var(--accent); font-size: 8px; }
-.recommendation-card > b { display: -webkit-box; min-height: 36px; margin: 8px 0 4px; overflow: hidden; color: var(--text-secondary); font-size: 11px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.recommendation-card > p { overflow: hidden; margin: 0; color: var(--text-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.resource-type { display: inline-flex; padding: 3px 6px; border-radius: 6px; background: var(--accent-hover); color: var(--accent); font-size: 9px; }
+.recommendation-card > b { display: -webkit-box; min-height: 38px; margin: 8px 0 4px; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.recommendation-card > p { overflow: hidden; margin: 0; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .resource-actions { display: grid; grid-template-columns: auto minmax(72px, 1fr) auto; gap: 5px; margin-top: 11px; }
-.resource-actions a, .resource-actions button, .new-collection button, .new-collection input { height: 27px; border: 1px solid var(--border-solid); border-radius: 8px; background: var(--bg-input); color: var(--text-secondary); font-size: 9px; }
+.resource-actions a, .resource-actions button, .new-collection button, .new-collection input { height: 27px; border: 1px solid var(--border-solid); border-radius: 8px; background: var(--bg-input); color: var(--text-secondary); font-size: 10px; }
 .resource-actions a { display: flex; align-items: center; padding: 0 7px; color: var(--accent); text-decoration: none; }
 .overview-select { min-width: 0; }
 .overview-select :deep(.el-select__wrapper) { min-height: 34px; height: 34px; box-sizing: border-box; padding: 0 26px 0 9px; border: 1px solid var(--border-solid); border-radius: 9px; background: var(--bg-input); box-shadow: none; color: var(--text-secondary); font-size: 11px; transition: background .2s, border-color .2s; }
@@ -447,26 +342,26 @@ onMounted(loadCollections)
 .new-collection { display: flex; gap: 5px; }
 .new-collection input { width: 150px; padding: 0 9px; outline: 0; }
 .collection-tabs { display: flex; gap: 5px; margin-bottom: 9px; overflow-x: auto; }
-.collection-tabs button { height: 29px; flex: 0 0 auto; padding: 0 9px; border: 1px solid var(--border-solid); border-radius: 9px; background: transparent; color: var(--text-faint); font-size: 9px; cursor: pointer; }
+.collection-tabs button { height: 29px; flex: 0 0 auto; padding: 0 9px; border: 1px solid var(--border-solid); border-radius: 9px; background: transparent; color: var(--text-faint); font-size: 10px; cursor: pointer; }
 .collection-tabs button.active { border-color: var(--accent); background: var(--accent-hover); color: var(--accent); }
 .collection-tabs span { margin-left: 3px; opacity: .7; }
 .favorite-card { position: relative; min-width: 0; border: 1px solid var(--border-solid); border-radius: 13px; background: var(--ai-bubble-bg); transition: transform .2s, border-color .2s; }
 .favorite-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border-solid)); transform: translateY(-2px); }
 .favorite-card > a { display: block; min-height: 126px; padding: 14px; color: inherit; text-decoration: none; }
-.favorite-card a > span { color: var(--accent); font-size: 8px; }
-.favorite-card a > b { display: -webkit-box; margin: 8px 20px 8px 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.favorite-card a > p { margin: 0; color: var(--text-faint); font-size: 9px; }
-.favorite-card a > i { display: block; margin-top: 13px; color: var(--accent); font-size: 9px; font-style: normal; }
+.favorite-card a > span { color: var(--accent); font-size: 9px; }
+.favorite-card a > b { display: -webkit-box; margin: 8px 20px 8px 0; overflow: hidden; color: var(--text-secondary); font-size: 13px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.favorite-card a > p { margin: 0; color: var(--text-faint); font-size: 10px; }
+.favorite-card a > i { display: block; margin-top: 13px; color: var(--accent); font-size: 10px; font-style: normal; }
 .favorite-card > button { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border: 0; border-radius: 7px; background: transparent; color: var(--text-faint); cursor: pointer; }
 .favorite-card > button:hover { background: var(--practice-danger-soft); color: var(--practice-danger); }
-.overview-empty { padding: 28px; border: 1px dashed var(--border-solid); border-radius: 13px; color: var(--text-faint); font-size: 10px; text-align: center; }
+.overview-empty { padding: 28px; border: 1px dashed var(--border-solid); border-radius: 13px; color: var(--text-faint); font-size: 11px; text-align: center; }
 @media (max-width: 1120px) {
   .overview-header { display: block; }
   .overview-metrics { margin-top: 14px; }
   .recommendation-grid, .favorite-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
-  .course-grid, .recommendation-grid, .favorite-grid { grid-template-columns: 1fr; }
+  .recommendation-grid, .favorite-grid { grid-template-columns: 1fr; }
   .chapter-row { grid-template-columns: 25px minmax(0,1fr) 42px; }
   .chapter-evidence { display: none; }
   .collection-heading { display: block; }

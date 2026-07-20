@@ -4,6 +4,7 @@ import com.edu.agent.model.Conversation;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -42,6 +43,10 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
     /** 查询指定对话的完整消息，按时间倒序。 */
     List<Conversation> findByUserIdAndConversationIdOrderByTimestampDesc(
             Long userId, String conversationId);
+
+    /** 用户上传的图片消息，用于和文档上传记录合并为完整历史文件列表。 */
+    List<Conversation> findByUserIdAndRoleAndAttachmentTypeOrderByTimestampDesc(
+            Long userId, String role, String attachmentType, Pageable pageable);
 
     /** 统计时间区间内的用户对话消息（不包含智能体回复）。 */
     List<Conversation> findByUserIdAndRoleAndTimestampBetween(

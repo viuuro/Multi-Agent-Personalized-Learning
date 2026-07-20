@@ -857,11 +857,13 @@ async function generateImageArtifact(prompt: string) {
   try {
     const result = await generateImageArtifactApi(prompt, chatStore.conversationId || undefined)
     chatStore.finishStreaming()
+    chatStore.setConversationId(result.conversationId)
     chatStore.addMessage({
-      id: `${Date.now()}-image`, role: 'assistant',
+      id: result.messageId?.toString() || `${Date.now()}-image`, role: 'assistant',
       content: '学习图片已生成。',
       imageUrl: result.dataUrl, timestamp: Date.now(),
     })
+    window.dispatchEvent(new Event('conversation-list-updated'))
   } catch (error) {
     chatStore.appendStreamContent(`\n\n[资源生成失败：${error instanceof Error ? error.message : '服务暂时不可用'}]`)
     chatStore.finishStreaming()

@@ -95,7 +95,7 @@
           <div v-if="uploadedFiles.length === 0" class="file-empty">暂无上传记录</div>
           <div v-else class="file-list">
             <div v-for="file in uploadedFiles" :key="file.id" class="file-item">
-              <UiIcon name="file" />
+              <UiIcon :name="file.kind === 'IMAGE' ? 'image' : 'file'" />
               <span class="file-name">{{ file.name }}</span>
               <span class="file-time">{{ file.time }}</span>
             </div>
@@ -318,7 +318,7 @@ watch(activeHeaderTab, value => localStorage.setItem(HEADER_TAB_KEY, value))
 // 贡献图数据（16周 = 112天）
 type ContributionDay = DailyLearningActivity & { count: number; displayDate: string }
 const contributionData = ref<ContributionDay[]>([])
-const uploadedFiles = ref<{ id: number; name: string; time: string }[]>([])
+const uploadedFiles = ref<{ id: number; name: string; time: string; kind: 'DOCUMENT' | 'IMAGE' }[]>([])
 const activityTooltip = reactive<{
   visible: boolean
   x: number
@@ -393,11 +393,18 @@ async function loadUploadedFiles() {
   }
   try {
     const files = await fetchUploadedFilesApi(userId, 50)
-    uploadedFiles.value = files.map(file => ({
-      id: file.id,
-      name: file.fileName,
-      time: `${formatConversationTime(new Date(file.uploadedAt).getTime())} · ${file.purpose === 'SUBMISSION' ? '学习成果' : '对话文件'}`,
-    }))
+    uploadedFiles.value = files.map(file => {
+      const kind = file.fileKind === 'IMAGE' || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.fileName)
+        ? 'IMAGE' : 'DOCUMENT'
+      const source = file.purpose === 'SUBMISSION'
+        ? '学习成果' : kind === 'IMAGE' ? '对话图片' : '对话文件'
+      return {
+        id: file.id,
+        name: file.fileName,
+        kind,
+        time: `${formatConversationTime(new Date(file.uploadedAt).getTime())} · ${source}`,
+      }
+    })
   } catch (err) {
     console.warn('历史文件加载失败', err)
     uploadedFiles.value = []

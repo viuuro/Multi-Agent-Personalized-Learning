@@ -21,7 +21,7 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 
-MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
+DEFAULT_MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 MODEL_NAME = "mimo-v2.5-tts"
 PRESET_VOICE = "冰糖"
 REQUEST_TIMEOUT_SECONDS = 120
@@ -50,11 +50,10 @@ def is_wav_audio(audio_bytes: bytes) -> bool:
     )
 
 
-def get_mimo_api_key() -> str | None:
-    """Read ``MIMO_API_KEY`` from the environment or a local .env file."""
-    if api_key := os.getenv("MIMO_API_KEY"):
-        return api_key
-
+def _get_mimo_setting(setting_name: str) -> str | None:
+    """Read one shared MiMo setting from the environment or a local .env file."""
+    if value := os.getenv(setting_name):
+        return value.strip()
     script_dir = Path(__file__).resolve().parent
     candidate_paths = (Path.cwd() / ".env", script_dir / ".env", script_dir.parent / ".env")
     visited_paths: set[Path] = set()
@@ -70,8 +69,8 @@ def get_mimo_api_key() -> str | None:
                 continue
             if line.startswith("export "):
                 line = line[7:].lstrip()
-            name, separator, value = line.partition("=")
-            if separator and name.strip() == "MIMO_API_KEY":
+            env_name, separator, value = line.partition("=")
+            if separator and env_name.strip() == setting_name:
                 value = value.strip()
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
                     value = value[1:-1]
@@ -80,12 +79,22 @@ def get_mimo_api_key() -> str | None:
     return None
 
 
-@lru_cache(maxsize=2)
-def _get_tts_client(api_key: str) -> OpenAI:
+def get_mimo_api_key() -> str | None:
+    """Return the same ``MIMO_API_KEY`` used by the conversational agents."""
+    return _get_mimo_setting("MIMO_API_KEY")
+
+
+def get_mimo_base_url() -> str:
+    """Return the shared MiMo API gateway used by both chat and speech models."""
+    return (_get_mimo_setting("MIMO_BASE_URL") or DEFAULT_MIMO_BASE_URL).rstrip("/")
+
+
+@lru_cache(maxsize=4)
+def _get_tts_client(api_key: str, base_url: str) -> OpenAI:
     """Reuse the MiMo HTTP connection pool instead of creating it per request."""
     return OpenAI(
         api_key=api_key,
-        base_url=MIMO_BASE_URL,
+        base_url=base_url,
         timeout=REQUEST_TIMEOUT_SECONDS,
         max_retries=0,
     )
@@ -128,11 +137,14 @@ def synthesize_speech(
 def synthesize_speech_audio(
     text_to_speak: str,
     style_instruction: str = DEFAULT_STYLE_INSTRUCTION,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> bytes:
-    """Return WAV bytes using MiMo's official non-streaming preset-voice format."""
-    api_key = get_mimo_api_key()
-    if not api_key:
+    """Return WAV bytes through the same MiMo API configuration as the agents."""
+    resolved_api_key = api_key if api_key is not None else get_mimo_api_key()
+    if not resolved_api_key:
         raise SpeechSynthesisError("请设置 MIMO_API_KEY，或在 .env 文件中配置它。")
+    resolved_base_url = (base_url or get_mimo_base_url()).rstrip("/")
 
     text = text_to_speak.strip()
     if not text:
@@ -143,7 +155,7 @@ def synthesize_speech_audio(
         messages.append({"role": "user", "content": style})
     messages.append({"role": "assistant", "content": text})
 
-    client = _get_tts_client(api_key)
+    client = _get_tts_client(resolved_api_key, resolved_base_url)
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,

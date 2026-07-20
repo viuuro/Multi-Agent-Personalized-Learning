@@ -48,6 +48,7 @@ from tts_demo import (
     PRESET_VOICE,
     SpeechSynthesisError,
     get_mimo_api_key,
+    get_mimo_base_url,
     is_wav_audio,
     synthesize_speech_audio,
 )
@@ -99,7 +100,7 @@ _load_local_env_defaults()
 # 小米 MiMo-v2.5 API 密钥，从环境变量读取（必须设置，否则降级为 Mock 模式）
 MIMO_API_KEY = get_mimo_api_key() or ""
 # 小米 MiMo-v2.5 API 基础地址（兼容 OpenAI 格式）
-MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1").strip()
+MIMO_BASE_URL = get_mimo_base_url()
 # 使用的模型名称
 MODEL_NAME = os.getenv("MIMO_MODEL", "mimo-v2.5").strip()
 ENABLE_RESPONSE_REVIEW = os.getenv("ENABLE_RESPONSE_REVIEW", "true").lower() == "true"
@@ -1853,6 +1854,8 @@ async def welcome_voice(req: WelcomeVoiceRequest):
                         synthesize_speech_audio,
                         text,
                         style,
+                        MIMO_API_KEY,
+                        MIMO_BASE_URL,
                     )
                     await run_in_threadpool(write_cached_voice, cache_key, audio_bytes)
             finally:

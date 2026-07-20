@@ -42,7 +42,10 @@ class TtsDemoTest(unittest.TestCase):
             )
         )
 
-        with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False), patch.object(
+        with patch.dict(os.environ, {
+            "MIMO_API_KEY": "test-key",
+            "MIMO_BASE_URL": "https://shared-mimo.example/v1/",
+        }, clear=False), patch.object(
             tts_demo, "OpenAI", return_value=fake_client
         ) as openai_class, patch.object(
             fake_client.chat.completions, "create", wraps=fake_client.chat.completions.create
@@ -53,6 +56,12 @@ class TtsDemoTest(unittest.TestCase):
         self.assertEqual(VALID_WAV, result)
         self.assertEqual(VALID_WAV, second_result)
         openai_class.assert_called_once()
+        openai_class.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://shared-mimo.example/v1",
+            timeout=tts_demo.REQUEST_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
         self.assertEqual(2, create.call_count)
         request = create.call_args_list[0].kwargs
         self.assertIs(request["stream"], False)
@@ -97,6 +106,27 @@ class TtsDemoTest(unittest.TestCase):
 
         with self.assertRaisesRegex(tts_demo.SpeechSynthesisError, "WAV"):
             tts_demo.extract_audio_bytes(completion)
+
+    def test_explicit_agent_config_is_used_for_speech(self) -> None:
+        completion = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                audio=SimpleNamespace(data=base64.b64encode(VALID_WAV).decode())
+            ))]
+        )
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: completion))
+        )
+        with patch.object(tts_demo, "OpenAI", return_value=fake_client) as openai_class:
+            tts_demo.synthesize_speech_audio(
+                "共用智能体配置", "", "agent-key", "https://agent-api.example/v1/"
+            )
+
+        openai_class.assert_called_once_with(
+            api_key="agent-key",
+            base_url="https://agent-api.example/v1",
+            timeout=tts_demo.REQUEST_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
 
 if __name__ == "__main__":
